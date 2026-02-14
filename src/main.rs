@@ -25,6 +25,29 @@ fn slugify(text: &str) -> String {
         .join("-")
 }
 
+/// Translate .md links to .html links in markdown events
+fn translate_links(event: Event) -> Event {
+    match event {
+        Event::Start(Tag::Link { link_type, dest_url, title, id }) => {
+            // Handle .md links with or without fragments
+            let new_url = if let Some(hash_pos) = dest_url.find('#') {
+                let (path, fragment) = dest_url.split_at(hash_pos);
+                if path.ends_with(".md") {
+                    format!("{}{}", path.replace(".md", ".html"), fragment).into()
+                } else {
+                    dest_url
+                }
+            } else if dest_url.ends_with(".md") {
+                dest_url.replace(".md", ".html").into()
+            } else {
+                dest_url
+            };
+            Event::Start(Tag::Link { link_type, dest_url: new_url, title, id })
+        }
+        _ => event,
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     
@@ -100,71 +123,35 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
         options.insert(Options::ENABLE_TABLES);
         let parser = Parser::new_ext(&content, options);
         
-        // Track links and convert to HTML in a single pass
+        // Track links and convert to HTML using functional approach
         let html_content = {
-            // First pass: track links and transform link URLs
-            let mut events = Vec::new();
-            let mut heading_stack: Vec<String> = Vec::new();
-            
-            for event in parser {
-                // Track links for backlinks
-                if let Event::Start(Tag::Link { ref dest_url, .. }) = event {
-                    let link = dest_url.to_string();
-                    // Handle links with or without fragments (e.g., "file.md" or "file.md#heading")
-                    let base_link = if let Some(pos) = link.find('#') {
-                        &link[..pos]
-                    } else {
-                        &link
-                    };
-                    if base_link.ends_with(".md") {
-                        // Store just the filename part for backlinks
-                        let filename = base_link.to_string();
-                        backlinks
-                            .entry(filename)
-                            .or_default()
-                            .push(file_name.clone());
-                    }
-                }
-                
-                // Process event for HTML generation
-                match event {
-                    Event::Start(Tag::Heading { .. }) => {
-                        heading_stack.push(String::new());
-                        events.push(event);
-                    }
-                    Event::End(pulldown_cmark::TagEnd::Heading(_)) => {
-                        heading_stack.pop();
-                        events.push(event);
-                    }
-                    Event::Text(ref text) => {
-                        if let Some(heading_text) = heading_stack.last_mut() {
-                            heading_text.push_str(text);
-                        }
-                        events.push(event);
-                    }
-                    Event::Start(Tag::Link { link_type, dest_url, title, id }) => {
-                        // Handle .md links with or without fragments
-                        let new_url = if let Some(hash_pos) = dest_url.find('#') {
-                            let (path, fragment) = dest_url.split_at(hash_pos);
-                            if path.ends_with(".md") {
-                                format!("{}{}", path.replace(".md", ".html"), fragment).into()
-                            } else {
-                                dest_url
-                            }
-                        } else if dest_url.ends_with(".md") {
-                            dest_url.replace(".md", ".html").into()
+            // First pass: track backlinks THEN translate links using .map()
+            let events: Vec<Event> = parser
+                .map(|event| {
+                    // Track links for backlinks BEFORE translation
+                    if let Event::Start(Tag::Link { ref dest_url, .. }) = event {
+                        let link = dest_url.to_string();
+                        // Handle links with or without fragments (e.g., "file.md" or "file.md#heading")
+                        let base_link = if let Some(pos) = link.find('#') {
+                            &link[..pos]
                         } else {
-                            dest_url
+                            &link
                         };
-                        events.push(Event::Start(Tag::Link { link_type, dest_url: new_url, title, id }));
+                        if base_link.ends_with(".md") {
+                            // Store just the filename part for backlinks
+                            let filename = base_link.to_string();
+                            backlinks
+                                .entry(filename)
+                                .or_default()
+                                .push(file_name.clone());
+                        }
                     }
-                    _ => {
-                        events.push(event);
-                    }
-                }
-            }
+                    event
+                })
+                .map(translate_links)
+                .collect();
             
-            // Second pass: add IDs to headings
+            // Second pass: add IDs to headings (requires lookahead)
             let mut processed_events = Vec::new();
             let mut i = 0;
             
