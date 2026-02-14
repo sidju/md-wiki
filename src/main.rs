@@ -121,6 +121,7 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
         let mut options = Options::empty();
         options.insert(Options::ENABLE_STRIKETHROUGH);
         options.insert(Options::ENABLE_TABLES);
+        options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
         let parser = Parser::new_ext(&content, options);
         
         // Track links and convert to HTML using functional approach
@@ -158,22 +159,27 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
             while i < events.len() {
                 match &events[i] {
                     Event::Start(Tag::Heading { level, id, classes, attrs }) => {
-                        // Look ahead to collect heading text
-                        let mut current_heading_text = String::new();
-                        let mut j = i + 1;
-                        while j < events.len() {
-                            if let Event::End(pulldown_cmark::TagEnd::Heading(_)) = events[j] {
-                                break;
+                        // Only generate ID if one wasn't already provided in markdown
+                        let heading_id = if id.is_none() {
+                            // Look ahead to collect heading text for ID generation
+                            let mut current_heading_text = String::new();
+                            let mut j = i + 1;
+                            while j < events.len() {
+                                if let Event::End(pulldown_cmark::TagEnd::Heading(_)) = events[j] {
+                                    break;
+                                }
+                                if let Event::Text(ref text) = events[j] {
+                                    current_heading_text.push_str(text);
+                                }
+                                j += 1;
                             }
-                            if let Event::Text(ref text) = events[j] {
-                                current_heading_text.push_str(text);
+                            
+                            // Generate ID from heading text
+                            if !current_heading_text.is_empty() {
+                                Some(CowStr::from(slugify(&current_heading_text)))
+                            } else {
+                                None
                             }
-                            j += 1;
-                        }
-                        
-                        // Generate ID from heading text
-                        let heading_id = if !current_heading_text.is_empty() {
-                            Some(CowStr::from(slugify(&current_heading_text)))
                         } else {
                             id.clone()
                         };
@@ -380,6 +386,49 @@ mod tests {
         
         let page2_content = fs::read_to_string(output_dir.join("page2.html")).unwrap();
         assert!(page2_content.contains(r#"id="another-heading""#));
+
+        // Clean up
+        fs::remove_dir_all(&test_dir).unwrap();
+    }
+
+    #[test]
+    fn test_custom_heading_ids() {
+        let test_dir = std::env::temp_dir().join("md-wiki-custom-ids-test");
+        let input_dir = test_dir.join("input");
+        let output_dir = test_dir.join("output");
+
+        // Clean up if exists
+        let _ = fs::remove_dir_all(&test_dir);
+
+        // Create test directories
+        fs::create_dir_all(&input_dir).unwrap();
+        fs::create_dir_all(&output_dir).unwrap();
+
+        // Create test markdown file with custom heading IDs
+        fs::write(
+            input_dir.join("custom.md"),
+            "# Auto Generated\n\nThis gets auto ID.\n\n# Custom ID {#my-custom-id}\n\nThis has custom ID.\n\n## Another Auto {#also-custom}",
+        )
+        .unwrap();
+
+        // Convert
+        convert_wiki(
+            input_dir.to_str().unwrap(),
+            output_dir.to_str().unwrap()
+        ).unwrap();
+
+        // Check that headings have correct IDs
+        let content = fs::read_to_string(output_dir.join("custom.html")).unwrap();
+        
+        // Auto-generated ID from text
+        assert!(content.contains(r#"id="auto-generated""#), "Should have auto-generated ID");
+        
+        // Custom IDs from markdown
+        assert!(content.contains(r#"id="my-custom-id""#), "Should have custom ID");
+        assert!(content.contains(r#"id="also-custom""#), "Should have custom ID for h2");
+        
+        // Should NOT have auto-generated IDs for headings with custom IDs
+        assert!(!content.contains(r#"id="custom-id""#), "Should not auto-generate when custom ID exists");
 
         // Clean up
         fs::remove_dir_all(&test_dir).unwrap();
