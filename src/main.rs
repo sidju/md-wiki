@@ -124,35 +124,82 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
         options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
         let parser = Parser::new_ext(&content, options);
         
-        // Pure streaming approach: track links and translate to HTML
+        // Track links and convert to HTML using functional approach
         let html_content = {
-            let mut html_output = String::new();
-            html::push_html(
-                &mut html_output,
-                parser
-                    .map(|event| {
-                        // Track links for backlinks BEFORE translation
-                        if let Event::Start(Tag::Link { ref dest_url, .. }) = event {
-                            let link = dest_url.to_string();
-                            // Handle links with or without fragments (e.g., "file.md" or "file.md#heading")
-                            let base_link = if let Some(pos) = link.find('#') {
-                                &link[..pos]
-                            } else {
-                                &link
-                            };
-                            if base_link.ends_with(".md") {
-                                // Store just the filename part for backlinks
-                                let filename = base_link.to_string();
-                                backlinks
-                                    .entry(filename)
-                                    .or_default()
-                                    .push(file_name.clone());
-                            }
+            // First pass: track backlinks THEN translate links using .map()
+            let events: Vec<Event> = parser
+                .map(|event| {
+                    // Track links for backlinks BEFORE translation
+                    if let Event::Start(Tag::Link { ref dest_url, .. }) = event {
+                        let link = dest_url.to_string();
+                        // Handle links with or without fragments (e.g., "file.md" or "file.md#heading")
+                        let base_link = if let Some(pos) = link.find('#') {
+                            &link[..pos]
+                        } else {
+                            &link
+                        };
+                        if base_link.ends_with(".md") {
+                            // Store just the filename part for backlinks
+                            let filename = base_link.to_string();
+                            backlinks
+                                .entry(filename)
+                                .or_default()
+                                .push(file_name.clone());
                         }
-                        event
-                    })
-                    .map(translate_links),
-            );
+                    }
+                    event
+                })
+                .map(translate_links)
+                .collect();
+            
+            // Second pass: add IDs to headings (requires lookahead)
+            let mut processed_events = Vec::new();
+            let mut i = 0;
+            
+            while i < events.len() {
+                match &events[i] {
+                    Event::Start(Tag::Heading { level, id, classes, attrs }) => {
+                        // Only generate ID if one wasn't already provided in markdown
+                        let heading_id = if id.is_none() {
+                            // Look ahead to collect heading text for ID generation
+                            let mut current_heading_text = String::new();
+                            let mut j = i + 1;
+                            while j < events.len() {
+                                if let Event::End(pulldown_cmark::TagEnd::Heading(_)) = events[j] {
+                                    break;
+                                }
+                                if let Event::Text(ref text) = events[j] {
+                                    current_heading_text.push_str(text);
+                                }
+                                j += 1;
+                            }
+                            
+                            // Generate ID from heading text
+                            if !current_heading_text.is_empty() {
+                                Some(CowStr::from(slugify(&current_heading_text)))
+                            } else {
+                                None
+                            }
+                        } else {
+                            id.clone()
+                        };
+                        
+                        processed_events.push(Event::Start(Tag::Heading {
+                            level: *level,
+                            id: heading_id,
+                            classes: classes.clone(),
+                            attrs: attrs.clone(),
+                        }));
+                    }
+                    _ => {
+                        processed_events.push(events[i].clone());
+                    }
+                }
+                i += 1;
+            }
+            
+            let mut html_output = String::new();
+            html::push_html(&mut html_output, processed_events.into_iter());
             html_output
         };
 
