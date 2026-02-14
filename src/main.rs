@@ -25,125 +25,6 @@ fn slugify(text: &str) -> String {
         .join("-")
 }
 
-/// Extract markdown links from content for backlink tracking
-fn track_links(content: &str, backlinks: &mut HashMap<String, Vec<String>>, file_name: &str) {
-    let parser = Parser::new(content);
-    for event in parser {
-        if let Event::Start(Tag::Link { dest_url, .. }) = event {
-            let link = dest_url.to_string();
-            // Handle links with or without fragments (e.g., "file.md" or "file.md#heading")
-            let base_link = if let Some(pos) = link.find('#') {
-                &link[..pos]
-            } else {
-                &link
-            };
-            if base_link.ends_with(".md") {
-                // Store just the filename part for backlinks
-                let filename = base_link.to_string();
-                backlinks
-                    .entry(filename)
-                    .or_default()
-                    .push(file_name.to_string());
-            }
-        }
-    }
-}
-
-/// Process markdown events to generate HTML with proper heading IDs and link conversions
-fn convert_to_html(content: &str) -> String {
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_STRIKETHROUGH);
-    options.insert(Options::ENABLE_TABLES);
-    let parser = Parser::new_ext(content, options);
-    
-    // Single pass: collect events and track heading text
-    let mut events = Vec::new();
-    let mut heading_stack: Vec<String> = Vec::new();
-    
-    for event in parser {
-        match event {
-            Event::Start(Tag::Heading { .. }) => {
-                heading_stack.push(String::new());
-                events.push(event);
-            }
-            Event::End(pulldown_cmark::TagEnd::Heading(_)) => {
-                heading_stack.pop();
-                events.push(event);
-            }
-            Event::Text(ref text) => {
-                if let Some(heading_text) = heading_stack.last_mut() {
-                    heading_text.push_str(text);
-                }
-                events.push(event);
-            }
-            Event::Start(Tag::Link { link_type, dest_url, title, id }) => {
-                // Handle .md links with or without fragments
-                let new_url = if let Some(hash_pos) = dest_url.find('#') {
-                    let (path, fragment) = dest_url.split_at(hash_pos);
-                    if path.ends_with(".md") {
-                        format!("{}{}", path.replace(".md", ".html"), fragment).into()
-                    } else {
-                        dest_url
-                    }
-                } else if dest_url.ends_with(".md") {
-                    dest_url.replace(".md", ".html").into()
-                } else {
-                    dest_url
-                };
-                events.push(Event::Start(Tag::Link { link_type, dest_url: new_url, title, id }));
-            }
-            _ => {
-                events.push(event);
-            }
-        }
-    }
-    
-    // Second pass: add IDs to headings
-    let mut processed_events = Vec::new();
-    let mut i = 0;
-    
-    while i < events.len() {
-        match &events[i] {
-            Event::Start(Tag::Heading { level, id, classes, attrs }) => {
-                // Look ahead to collect heading text
-                let mut current_heading_text = String::new();
-                let mut j = i + 1;
-                while j < events.len() {
-                    if let Event::End(pulldown_cmark::TagEnd::Heading(_)) = events[j] {
-                        break;
-                    }
-                    if let Event::Text(ref text) = events[j] {
-                        current_heading_text.push_str(text);
-                    }
-                    j += 1;
-                }
-                
-                // Generate ID from heading text
-                let heading_id = if !current_heading_text.is_empty() {
-                    Some(CowStr::from(slugify(&current_heading_text)))
-                } else {
-                    id.clone()
-                };
-                
-                processed_events.push(Event::Start(Tag::Heading {
-                    level: *level,
-                    id: heading_id,
-                    classes: classes.clone(),
-                    attrs: attrs.clone(),
-                }));
-            }
-            _ => {
-                processed_events.push(events[i].clone());
-            }
-        }
-        i += 1;
-    }
-    
-    let mut html_output = String::new();
-    html::push_html(&mut html_output, processed_events.into_iter());
-    html_output
-}
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     
@@ -197,28 +78,137 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
         }
     }
 
-    // Build link graph: for each file, track which files link to it
-    let mut backlinks: HashMap<String, Vec<String>> = HashMap::new();
-
-    for md_path in &markdown_files {
-        let content = fs::read_to_string(md_path)?;
-        let file_name = md_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-
-        track_links(&content, &mut backlinks, file_name);
-    }
-
     // Create output directory if it doesn't exist
     fs::create_dir_all(output_dir)?;
+
+    // Build link graph: for each file, track which files link to it
+    let mut backlinks: HashMap<String, Vec<String>> = HashMap::new();
 
     // Convert each markdown file to HTML
     for md_path in &markdown_files {
         let content = fs::read_to_string(md_path)?;
         
-        // Convert markdown to HTML with heading IDs and link transformations
-        let html_content = convert_to_html(&content);
+        let file_name = md_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        
+        // Parse markdown with options
+        let mut options = Options::empty();
+        options.insert(Options::ENABLE_STRIKETHROUGH);
+        options.insert(Options::ENABLE_TABLES);
+        let parser = Parser::new_ext(&content, options);
+        
+        // Track links and convert to HTML in a single pass
+        let html_content = {
+            // First pass: track links and transform link URLs
+            let mut events = Vec::new();
+            let mut heading_stack: Vec<String> = Vec::new();
+            
+            for event in parser {
+                // Track links for backlinks
+                if let Event::Start(Tag::Link { ref dest_url, .. }) = event {
+                    let link = dest_url.to_string();
+                    // Handle links with or without fragments (e.g., "file.md" or "file.md#heading")
+                    let base_link = if let Some(pos) = link.find('#') {
+                        &link[..pos]
+                    } else {
+                        &link
+                    };
+                    if base_link.ends_with(".md") {
+                        // Store just the filename part for backlinks
+                        let filename = base_link.to_string();
+                        backlinks
+                            .entry(filename)
+                            .or_default()
+                            .push(file_name.clone());
+                    }
+                }
+                
+                // Process event for HTML generation
+                match event {
+                    Event::Start(Tag::Heading { .. }) => {
+                        heading_stack.push(String::new());
+                        events.push(event);
+                    }
+                    Event::End(pulldown_cmark::TagEnd::Heading(_)) => {
+                        heading_stack.pop();
+                        events.push(event);
+                    }
+                    Event::Text(ref text) => {
+                        if let Some(heading_text) = heading_stack.last_mut() {
+                            heading_text.push_str(text);
+                        }
+                        events.push(event);
+                    }
+                    Event::Start(Tag::Link { link_type, dest_url, title, id }) => {
+                        // Handle .md links with or without fragments
+                        let new_url = if let Some(hash_pos) = dest_url.find('#') {
+                            let (path, fragment) = dest_url.split_at(hash_pos);
+                            if path.ends_with(".md") {
+                                format!("{}{}", path.replace(".md", ".html"), fragment).into()
+                            } else {
+                                dest_url
+                            }
+                        } else if dest_url.ends_with(".md") {
+                            dest_url.replace(".md", ".html").into()
+                        } else {
+                            dest_url
+                        };
+                        events.push(Event::Start(Tag::Link { link_type, dest_url: new_url, title, id }));
+                    }
+                    _ => {
+                        events.push(event);
+                    }
+                }
+            }
+            
+            // Second pass: add IDs to headings
+            let mut processed_events = Vec::new();
+            let mut i = 0;
+            
+            while i < events.len() {
+                match &events[i] {
+                    Event::Start(Tag::Heading { level, id, classes, attrs }) => {
+                        // Look ahead to collect heading text
+                        let mut current_heading_text = String::new();
+                        let mut j = i + 1;
+                        while j < events.len() {
+                            if let Event::End(pulldown_cmark::TagEnd::Heading(_)) = events[j] {
+                                break;
+                            }
+                            if let Event::Text(ref text) = events[j] {
+                                current_heading_text.push_str(text);
+                            }
+                            j += 1;
+                        }
+                        
+                        // Generate ID from heading text
+                        let heading_id = if !current_heading_text.is_empty() {
+                            Some(CowStr::from(slugify(&current_heading_text)))
+                        } else {
+                            id.clone()
+                        };
+                        
+                        processed_events.push(Event::Start(Tag::Heading {
+                            level: *level,
+                            id: heading_id,
+                            classes: classes.clone(),
+                            attrs: attrs.clone(),
+                        }));
+                    }
+                    _ => {
+                        processed_events.push(events[i].clone());
+                    }
+                }
+                i += 1;
+            }
+            
+            let mut html_output = String::new();
+            html::push_html(&mut html_output, processed_events.into_iter());
+            html_output
+        };
 
         // Get the file name without extension
         let file_stem = md_path
