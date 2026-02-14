@@ -1,5 +1,4 @@
-use pulldown_cmark::{html, Options, Parser};
-use regex::Regex;
+use pulldown_cmark::{html, Event, Options, Parser, Tag};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -60,7 +59,6 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
 
     // Build link graph: for each file, track which files link to it
     let mut backlinks: HashMap<String, Vec<String>> = HashMap::new();
-    let link_regex = Regex::new(r"\[([^\]]+)\]\(([^\)]+\.md)\)")?;
 
     for md_path in &markdown_files {
         let content = fs::read_to_string(md_path)?;
@@ -70,13 +68,17 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
             .unwrap_or("")
             .to_string();
 
-        for cap in link_regex.captures_iter(&content) {
-            if let Some(linked_file) = cap.get(2) {
-                let linked = linked_file.as_str().to_string();
-                backlinks
-                    .entry(linked)
-                    .or_default()
-                    .push(file_name.clone());
+        // Parse markdown and extract links
+        let parser = Parser::new(&content);
+        for event in parser {
+            if let Event::Start(Tag::Link { dest_url, .. }) = event {
+                let link = dest_url.to_string();
+                if link.ends_with(".md") {
+                    backlinks
+                        .entry(link)
+                        .or_default()
+                        .push(file_name.clone());
+                }
             }
         }
     }
@@ -88,21 +90,28 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
     for md_path in &markdown_files {
         let content = fs::read_to_string(md_path)?;
         
-        // Replace .md links with .html links in markdown content
-        let content_with_html_links = link_regex.replace_all(&content, |caps: &regex::Captures| {
-            let text = &caps[1];
-            let link = &caps[2];
-            let html_link = link.replace(".md", ".html");
-            format!("[{}]({})", text, html_link)
-        });
-        
-        // Convert markdown to HTML
+        // Parse markdown and replace .md links with .html links
         let mut options = Options::empty();
         options.insert(Options::ENABLE_STRIKETHROUGH);
         options.insert(Options::ENABLE_TABLES);
-        let parser = Parser::new_ext(&content_with_html_links, options);
+        let parser = Parser::new_ext(&content, options);
+        
+        let parser_with_html_links = parser.map(|event| {
+            match event {
+                Event::Start(Tag::Link { link_type, dest_url, title, id }) => {
+                    let new_url = if dest_url.ends_with(".md") {
+                        dest_url.replace(".md", ".html").into()
+                    } else {
+                        dest_url
+                    };
+                    Event::Start(Tag::Link { link_type, dest_url: new_url, title, id })
+                }
+                _ => event,
+            }
+        });
+        
         let mut html_content = String::new();
-        html::push_html(&mut html_content, parser);
+        html::push_html(&mut html_content, parser_with_html_links);
 
         // Get the file name without extension
         let file_stem = md_path
