@@ -75,7 +75,7 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
                 let linked = linked_file.as_str().to_string();
                 backlinks
                     .entry(linked)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(file_name.clone());
             }
         }
@@ -118,8 +118,8 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
 
         // Build backlinks section
         let mut backlinks_html = String::new();
-        if let Some(links) = backlinks.get(&md_file_name) {
-            if !links.is_empty() {
+        if let Some(links) = backlinks.get(&md_file_name)
+            && !links.is_empty() {
                 backlinks_html.push_str("<hr>\n<h2>Linked from:</h2>\n<ul>\n");
                 for link in links {
                     let link_stem = link.trim_end_matches(".md");
@@ -130,7 +130,6 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
                 }
                 backlinks_html.push_str("</ul>\n");
             }
-        }
 
         // Combine header, content, backlinks, and footer
         let final_html = format!("{}{}{}{}", header, html_content, backlinks_html, footer);
@@ -149,16 +148,15 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
 mod tests {
     use super::*;
     use std::fs;
-    use std::path::Path;
 
     #[test]
     fn test_convert_simple_markdown() {
-        let test_dir = "/tmp/md-wiki-test";
-        let input_dir = format!("{}/input", test_dir);
-        let output_dir = format!("{}/output", test_dir);
+        let test_dir = std::env::temp_dir().join("md-wiki-test");
+        let input_dir = test_dir.join("input");
+        let output_dir = test_dir.join("output");
 
         // Clean up if exists
-        let _ = fs::remove_dir_all(test_dir);
+        let _ = fs::remove_dir_all(&test_dir);
 
         // Create test directories
         fs::create_dir_all(&input_dir).unwrap();
@@ -166,29 +164,32 @@ mod tests {
 
         // Create test markdown file
         fs::write(
-            format!("{}/test.md", input_dir),
+            input_dir.join("test.md"),
             "# Hello World\n\nThis is a test.",
         )
         .unwrap();
 
         // Create header and footer
         fs::write(
-            format!("{}/header.html", input_dir),
+            input_dir.join("header.html"),
             "<html><body>",
         )
         .unwrap();
         fs::write(
-            format!("{}/footer.html", input_dir),
+            input_dir.join("footer.html"),
             "</body></html>",
         )
         .unwrap();
 
         // Convert
-        convert_wiki(&input_dir, &output_dir).unwrap();
+        convert_wiki(
+            input_dir.to_str().unwrap(),
+            output_dir.to_str().unwrap()
+        ).unwrap();
 
         // Check output exists
-        let output_path = format!("{}/test.html", output_dir);
-        assert!(Path::new(&output_path).exists());
+        let output_path = output_dir.join("test.html");
+        assert!(output_path.exists());
 
         // Check content
         let content = fs::read_to_string(&output_path).unwrap();
@@ -197,17 +198,17 @@ mod tests {
         assert!(content.contains("</body></html>"));
 
         // Clean up
-        fs::remove_dir_all(test_dir).unwrap();
+        fs::remove_dir_all(&test_dir).unwrap();
     }
 
     #[test]
     fn test_backlinks() {
-        let test_dir = "/tmp/md-wiki-backlinks-test";
-        let input_dir = format!("{}/input", test_dir);
-        let output_dir = format!("{}/output", test_dir);
+        let test_dir = std::env::temp_dir().join("md-wiki-backlinks-test");
+        let input_dir = test_dir.join("input");
+        let output_dir = test_dir.join("output");
 
         // Clean up if exists
-        let _ = fs::remove_dir_all(test_dir);
+        let _ = fs::remove_dir_all(&test_dir);
 
         // Create test directories
         fs::create_dir_all(&input_dir).unwrap();
@@ -215,26 +216,29 @@ mod tests {
 
         // Create test markdown files
         fs::write(
-            format!("{}/page1.md", input_dir),
+            input_dir.join("page1.md"),
             "# Page 1\n\nThis links to [Page 2](page2.md).",
         )
         .unwrap();
         
         fs::write(
-            format!("{}/page2.md", input_dir),
+            input_dir.join("page2.md"),
             "# Page 2\n\nThis is the target page.",
         )
         .unwrap();
 
         // Convert
-        convert_wiki(&input_dir, &output_dir).unwrap();
+        convert_wiki(
+            input_dir.to_str().unwrap(),
+            output_dir.to_str().unwrap()
+        ).unwrap();
 
         // Check that page2.html has a backlink to page1
-        let page2_content = fs::read_to_string(format!("{}/page2.html", output_dir)).unwrap();
+        let page2_content = fs::read_to_string(output_dir.join("page2.html")).unwrap();
         assert!(page2_content.contains("Linked from:"));
         assert!(page2_content.contains("page1.html"));
 
         // Clean up
-        fs::remove_dir_all(test_dir).unwrap();
+        fs::remove_dir_all(&test_dir).unwrap();
     }
 }
