@@ -1,8 +1,29 @@
-use pulldown_cmark::{html, Event, Options, Parser, Tag};
+use pulldown_cmark::{html, Event, Options, Parser, Tag, CowStr};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+
+/// Convert text to a URL-friendly slug for heading IDs
+fn slugify(text: &str) -> String {
+    text.to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c
+            } else if c.is_whitespace() || c == '-' {
+                '-'
+            } else {
+                '\0'
+            }
+        })
+        .filter(|&c| c != '\0')
+        .collect::<String>()
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -73,9 +94,17 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
         for event in parser {
             if let Event::Start(Tag::Link { dest_url, .. }) = event {
                 let link = dest_url.to_string();
-                if link.ends_with(".md") {
+                // Handle links with or without fragments (e.g., "file.md" or "file.md#heading")
+                let base_link = if let Some(pos) = link.find('#') {
+                    &link[..pos]
+                } else {
+                    &link
+                };
+                if base_link.ends_with(".md") {
+                    // Store just the filename part for backlinks
+                    let filename = base_link.to_string();
                     backlinks
-                        .entry(link)
+                        .entry(filename)
                         .or_default()
                         .push(file_name.clone());
                 }
@@ -90,28 +119,98 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
     for md_path in &markdown_files {
         let content = fs::read_to_string(md_path)?;
         
-        // Parse markdown and replace .md links with .html links
+        // Parse markdown and replace .md links with .html links, handle fragments
         let mut options = Options::empty();
         options.insert(Options::ENABLE_STRIKETHROUGH);
         options.insert(Options::ENABLE_TABLES);
         let parser = Parser::new_ext(&content, options);
         
-        let parser_with_html_links = parser.map(|event| {
-            match event {
-                Event::Start(Tag::Link { link_type, dest_url, title, id }) => {
-                    let new_url = if dest_url.ends_with(".md") {
-                        dest_url.replace(".md", ".html").into()
-                    } else {
-                        dest_url
-                    };
-                    Event::Start(Tag::Link { link_type, dest_url: new_url, title, id })
+        // Track heading text to generate IDs
+        let mut in_heading = false;
+        let mut heading_text = String::new();
+        
+        let events: Vec<Event> = parser
+            .map(|event| {
+                match event {
+                    Event::Start(Tag::Heading { level, id, classes, attrs }) => {
+                        in_heading = true;
+                        heading_text.clear();
+                        Event::Start(Tag::Heading { level, id, classes, attrs })
+                    }
+                    Event::End(pulldown_cmark::TagEnd::Heading(level)) => {
+                        in_heading = false;
+                        Event::End(pulldown_cmark::TagEnd::Heading(level))
+                    }
+                    Event::Text(ref text) if in_heading => {
+                        heading_text.push_str(text);
+                        event
+                    }
+                    Event::Start(Tag::Link { link_type, dest_url, title, id }) => {
+                        // Handle .md links with or without fragments
+                        let new_url = if let Some(hash_pos) = dest_url.find('#') {
+                            let (path, fragment) = dest_url.split_at(hash_pos);
+                            if path.ends_with(".md") {
+                                format!("{}{}", path.replace(".md", ".html"), fragment).into()
+                            } else {
+                                dest_url
+                            }
+                        } else if dest_url.ends_with(".md") {
+                            dest_url.replace(".md", ".html").into()
+                        } else {
+                            dest_url
+                        };
+                        Event::Start(Tag::Link { link_type, dest_url: new_url, title, id })
+                    }
+                    _ => event,
                 }
-                _ => event,
+            })
+            .collect();
+        
+        // Second pass: add IDs to headings
+        let mut events_with_ids = Vec::new();
+        let mut i = 0;
+        let mut current_heading_text = String::new();
+        
+        while i < events.len() {
+            match &events[i] {
+                Event::Start(Tag::Heading { level, id, classes, attrs }) => {
+                    current_heading_text.clear();
+                    
+                    // Look ahead to collect heading text
+                    let mut j = i + 1;
+                    while j < events.len() {
+                        if let Event::End(pulldown_cmark::TagEnd::Heading(_)) = events[j] {
+                            break;
+                        }
+                        if let Event::Text(ref text) = events[j] {
+                            current_heading_text.push_str(text);
+                        }
+                        j += 1;
+                    }
+                    
+                    // Generate ID from heading text
+                    let heading_id = if !current_heading_text.is_empty() {
+                        Some(CowStr::from(slugify(&current_heading_text)))
+                    } else {
+                        id.clone()
+                    };
+                    
+                    events_with_ids.push(Event::Start(Tag::Heading {
+                        level: *level,
+                        id: heading_id,
+                        classes: classes.clone(),
+                        attrs: attrs.clone(),
+                    }));
+                }
+                _ => {
+                    events_with_ids.push(events[i].clone());
+                }
             }
-        });
+            i += 1;
+        }
         
         let mut html_content = String::new();
-        html::push_html(&mut html_content, parser_with_html_links);
+        html::push_html(&mut html_content, events_with_ids.into_iter());
 
         // Get the file name without extension
         let file_stem = md_path
@@ -246,6 +345,56 @@ mod tests {
         let page2_content = fs::read_to_string(output_dir.join("page2.html")).unwrap();
         assert!(page2_content.contains("Linked from:"));
         assert!(page2_content.contains("page1.html"));
+
+        // Clean up
+        fs::remove_dir_all(&test_dir).unwrap();
+    }
+
+    #[test]
+    fn test_heading_anchors() {
+        let test_dir = std::env::temp_dir().join("md-wiki-anchors-test");
+        let input_dir = test_dir.join("input");
+        let output_dir = test_dir.join("output");
+
+        // Clean up if exists
+        let _ = fs::remove_dir_all(&test_dir);
+
+        // Create test directories
+        fs::create_dir_all(&input_dir).unwrap();
+        fs::create_dir_all(&output_dir).unwrap();
+
+        // Create test markdown file with headings and anchor links
+        fs::write(
+            input_dir.join("page1.md"),
+            "# Main Heading\n\nLink to [section](#sub-heading).\n\n## Sub Heading\n\nLink to [other page](page2.md#another-heading).",
+        )
+        .unwrap();
+        
+        fs::write(
+            input_dir.join("page2.md"),
+            "# Another Heading\n\nContent here.",
+        )
+        .unwrap();
+
+        // Convert
+        convert_wiki(
+            input_dir.to_str().unwrap(),
+            output_dir.to_str().unwrap()
+        ).unwrap();
+
+        // Check that headings have IDs
+        let page1_content = fs::read_to_string(output_dir.join("page1.html")).unwrap();
+        assert!(page1_content.contains(r#"id="main-heading""#));
+        assert!(page1_content.contains(r#"id="sub-heading""#));
+        
+        // Check that internal anchor links work
+        assert!(page1_content.contains(r##"href="#sub-heading""##));
+        
+        // Check that cross-file anchor links work
+        assert!(page1_content.contains(r##"href="page2.html#another-heading""##));
+        
+        let page2_content = fs::read_to_string(output_dir.join("page2.html")).unwrap();
+        assert!(page2_content.contains(r#"id="another-heading""#));
 
         // Clean up
         fs::remove_dir_all(&test_dir).unwrap();
