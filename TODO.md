@@ -1,3 +1,3 @@
 - Split out all css into its own file
-- Deduplicate the backlinks list (so the same page isn't mentioned twice)
 - Try to cleanup the code
+

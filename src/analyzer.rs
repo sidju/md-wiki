@@ -83,10 +83,13 @@ impl Analyzer {
             if base_link.ends_with(".md") {
                 // Store just the filename part for backlinks
                 let filename = base_link.to_string();
-                self.backlinks
+                let backlink_list = self.backlinks
                     .entry(filename)
-                    .or_default()
-                    .push(self.current_file.clone());
+                    .or_default();
+                // Only add if not already present (deduplicate)
+                if !backlink_list.contains(&self.current_file) {
+                    backlink_list.push(self.current_file.clone());
+                }
             }
         }
         
