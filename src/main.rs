@@ -91,9 +91,9 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
         let parser = Parser::new_ext(&content, options);
         
         // Stream events through the processing pipeline:
-        // 1. Analyze (track backlinks) - converts to 'static lifetime
+        // 1. Analyze (track backlinks)
         // 2. Translate links (.md -> .html)
-        // 3. Ingest into HTML aggregator (handles lookahead for heading IDs)
+        // 3. Ingest into HTML aggregator (converts to 'static and handles lookahead for heading IDs)
         let html_content = {
             let aggregator = parser
                 .map(|event| analyzer.analyze(event))
