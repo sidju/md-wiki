@@ -279,6 +279,52 @@ mod tests {
     }
 
     #[test]
+    fn test_deduplicated_backlinks() {
+        let test_dir = std::env::temp_dir().join("md-wiki-dedup-test");
+        let input_dir = test_dir.join("input");
+        let output_dir = test_dir.join("output");
+
+        // Clean up if exists
+        let _ = fs::remove_dir_all(&test_dir);
+
+        // Create test directories
+        fs::create_dir_all(&input_dir).unwrap();
+        fs::create_dir_all(&output_dir).unwrap();
+
+        // Create a page that links to another page multiple times
+        fs::write(
+            input_dir.join("page1.md"),
+            "# Page 1\n\nThis links to [Page 2](page2.md) and also to [Page 2 again](page2.md).",
+        )
+        .unwrap();
+        
+        fs::write(
+            input_dir.join("page2.md"),
+            "# Page 2\n\nThis is the target page.",
+        )
+        .unwrap();
+
+        // Convert
+        convert_wiki(
+            input_dir.to_str().unwrap(),
+            output_dir.to_str().unwrap()
+        ).unwrap();
+
+        // Check that page2.html has a backlink to page1 only once
+        let page2_content = fs::read_to_string(output_dir.join("page2.html")).unwrap();
+        assert!(page2_content.contains("Linked from:"));
+        
+        // Count occurrences of page1.html in backlinks section
+        let backlinks_start = page2_content.find("Linked from:").unwrap();
+        let backlinks_section = &page2_content[backlinks_start..];
+        let count = backlinks_section.matches("page1.html").count();
+        assert_eq!(count, 1, "page1 should appear exactly once in backlinks, but appeared {} times", count);
+
+        // Clean up
+        fs::remove_dir_all(&test_dir).unwrap();
+    }
+
+    #[test]
     fn test_heading_anchors() {
         let test_dir = std::env::temp_dir().join("md-wiki-anchors-test");
         let input_dir = test_dir.join("input");
