@@ -2,6 +2,7 @@ mod analyzer;
 mod link_translator;
 mod html_aggregator;
 
+use clap::Parser as ClapParser;
 use pulldown_cmark::{Options, Parser};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,24 +12,27 @@ use analyzer::Analyzer;
 use link_translator::translate_link;
 use html_aggregator::HtmlAggregator;
 
+/// A minimal static wiki generator using markdown files as input
+#[derive(ClapParser, Debug)]
+#[command(name = "md-wiki")]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Directory containing markdown files
+    input_directory: String,
+
+    /// Directory where HTML files will be created
+    #[arg(default_value = ".")]
+    output_directory: String,
+
+    /// Optional path where search index will be written
+    #[arg(long = "search-index")]
+    search_index: Option<String>,
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    
-    if args.len() < 2 {
-        eprintln!("Usage: md-wiki <input_directory> [output_directory]");
-        eprintln!("  input_directory:  Directory containing markdown files");
-        eprintln!("  output_directory: Directory where HTML files will be created (default: current directory)");
-        std::process::exit(1);
-    }
+    let args = Args::parse();
 
-    let input_dir = &args[1];
-    let output_dir = if args.len() > 2 {
-        &args[2]
-    } else {
-        "."
-    };
-
-    match convert_wiki(input_dir, output_dir) {
+    match convert_wiki(&args.input_directory, &args.output_directory, args.search_index.as_deref()) {
         Ok(_) => println!("Successfully converted markdown files to HTML"),
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -37,7 +41,7 @@ fn main() {
     }
 }
 
-fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn convert_wiki(input_dir: &str, output_dir: &str, search_index_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     // Load header and footer
     let header_path = Path::new(input_dir).join("header.html");
     let footer_path = Path::new(input_dir).join("footer.html");
@@ -54,13 +58,31 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
         String::from("</body>\n</html>\n")
     };
 
-    // Find all markdown files
+    // Find all files and separate them into markdown and other files
     let mut markdown_files: Vec<PathBuf> = Vec::new();
+    let mut other_files: Vec<PathBuf> = Vec::new();
+    
     for entry in WalkDir::new(input_dir) {
         let entry = entry?;
         let path = entry.path();
-        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+        
+        if !path.is_file() {
+            continue;
+        }
+        
+        // Skip header.html and footer.html as they are templates
+        // Note: Files with non-UTF8 names won't be skipped even if they're actually
+        // named header.html or footer.html, but this is an extremely rare edge case
+        // and such files would fail to process correctly anyway
+        let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if file_name == "header.html" || file_name == "footer.html" {
+            continue;
+        }
+        
+        if path.extension().and_then(|s| s.to_str()) == Some("md") {
             markdown_files.push(path.to_path_buf());
+        } else {
+            other_files.push(path.to_path_buf());
         }
     }
 
@@ -105,12 +127,6 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
             aggregator.to_html_string()
         };
 
-        // Get the file name without extension
-        let file_stem = md_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("output");
-        
         let md_file_name = md_path
             .file_name()
             .and_then(|s| s.to_str())
@@ -135,46 +151,43 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
         // Combine header, content, backlinks, and footer
         let final_html = format!("{}{}{}{}", header, html_content, backlinks_html, footer);
 
-        // Write to output file
-        let output_path = Path::new(output_dir).join(format!("{}.html", file_stem));
+        // Calculate the relative path from input_dir to preserve directory structure
+        let relative_path = md_path.strip_prefix(input_dir)?;
+        let output_path = Path::new(output_dir).join(relative_path).with_extension("html");
+        
+        // Create parent directory if needed
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        
         fs::write(&output_path, final_html)?;
         
         println!("Created: {}", output_path.display());
     }
 
-    // Finalize analyzer and generate search index
-    let search_index = analyzer.finalize();
-    let index_json = serde_json::to_string_pretty(&search_index)?;
-    
-    // Create search-data.js with embedded index
-    let search_data_content = format!("window.SEARCH_INDEX_DATA = {};", index_json);
-    let search_data_path = Path::new(output_dir).join("search-data.js");
-    fs::write(&search_data_path, search_data_content)?;
-    println!("Created: {}", search_data_path.display());
-    
-    // Copy resources folder if it exists
-    let resources_src = Path::new(input_dir).join("resources");
-    if resources_src.exists() && resources_src.is_dir() {
-        let resources_dst = Path::new(output_dir).join("resources");
-        fs::create_dir_all(&resources_dst)?;
+    // Copy all non-.md files (preserving directory structure)
+    for file_path in &other_files {
+        let relative_path = file_path.strip_prefix(input_dir)?;
+        let dest_path = Path::new(output_dir).join(relative_path);
         
-        for entry in WalkDir::new(&resources_src) {
-            let entry = entry?;
-            let path = entry.path();
-            
-            if path.is_file() {
-                let relative_path = path.strip_prefix(&resources_src)?;
-                let dest_path = resources_dst.join(relative_path);
-                
-                // Create parent directory if needed
-                if let Some(parent) = dest_path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                
-                fs::copy(path, &dest_path)?;
-                println!("Copied: {}", dest_path.display());
-            }
+        // Create parent directory if needed
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent)?;
         }
+        
+        fs::copy(file_path, &dest_path)?;
+        println!("Copied: {}", dest_path.display());
+    }
+
+    // Optionally generate search index if path is provided
+    if let Some(index_path) = search_index_path {
+        let search_index = analyzer.finalize();
+        let index_json = serde_json::to_string_pretty(&search_index)?;
+        
+        // Create search-data.js with embedded index
+        let search_data_content = format!("window.SEARCH_INDEX_DATA = {};", index_json);
+        fs::write(index_path, search_data_content)?;
+        println!("Created: {}", index_path);
     }
 
     Ok(())
@@ -220,7 +233,8 @@ mod tests {
         // Convert
         convert_wiki(
             input_dir.to_str().unwrap(),
-            output_dir.to_str().unwrap()
+            output_dir.to_str().unwrap(),
+            None
         ).unwrap();
 
         // Check output exists
@@ -266,7 +280,8 @@ mod tests {
         // Convert
         convert_wiki(
             input_dir.to_str().unwrap(),
-            output_dir.to_str().unwrap()
+            output_dir.to_str().unwrap(),
+            None
         ).unwrap();
 
         // Check that page2.html has a backlink to page1
@@ -307,7 +322,8 @@ mod tests {
         // Convert
         convert_wiki(
             input_dir.to_str().unwrap(),
-            output_dir.to_str().unwrap()
+            output_dir.to_str().unwrap(),
+            None
         ).unwrap();
 
         // Check that page2.html has a backlink to page1 only once
@@ -353,7 +369,8 @@ mod tests {
         // Convert
         convert_wiki(
             input_dir.to_str().unwrap(),
-            output_dir.to_str().unwrap()
+            output_dir.to_str().unwrap(),
+            None
         ).unwrap();
 
         // Check that headings have IDs
@@ -397,7 +414,8 @@ mod tests {
         // Convert
         convert_wiki(
             input_dir.to_str().unwrap(),
-            output_dir.to_str().unwrap()
+            output_dir.to_str().unwrap(),
+            None
         ).unwrap();
 
         // Check that headings have correct IDs
@@ -437,14 +455,15 @@ mod tests {
         )
         .unwrap();
 
-        // Convert
+        // Convert with search index
+        let search_data_path = output_dir.join("search-data.js");
         convert_wiki(
             input_dir.to_str().unwrap(),
-            output_dir.to_str().unwrap()
+            output_dir.to_str().unwrap(),
+            Some(search_data_path.to_str().unwrap())
         ).unwrap();
 
         // Check that search-data.js exists
-        let search_data_path = output_dir.join("search-data.js");
         assert!(search_data_path.exists(), "search-data.js should be created");
 
         // Verify search-data.js contains the expected structure
@@ -470,6 +489,153 @@ mod tests {
         
         assert!(search_data_json.get("documents").is_some(), 
                 "Parsed data should have documents field");
+
+        // Clean up
+        fs::remove_dir_all(&test_dir).unwrap();
+    }
+
+    #[test]
+    fn test_no_search_index_by_default() {
+        let test_dir = std::env::temp_dir().join("md-wiki-no-search-test");
+        let input_dir = test_dir.join("input");
+        let output_dir = test_dir.join("output");
+
+        // Clean up if exists
+        let _ = fs::remove_dir_all(&test_dir);
+
+        // Create test directories
+        fs::create_dir_all(&input_dir).unwrap();
+        fs::create_dir_all(&output_dir).unwrap();
+
+        // Create test markdown file
+        fs::write(
+            input_dir.join("test.md"),
+            "# Test Page\n\nContent here.",
+        )
+        .unwrap();
+
+        // Convert without search index
+        convert_wiki(
+            input_dir.to_str().unwrap(),
+            output_dir.to_str().unwrap(),
+            None
+        ).unwrap();
+
+        // Check that search-data.js does NOT exist
+        let search_data_path = output_dir.join("search-data.js");
+        assert!(!search_data_path.exists(), "search-data.js should not be created when path is None");
+
+        // But the HTML file should exist
+        assert!(output_dir.join("test.html").exists(), "HTML file should be created");
+
+        // Clean up
+        fs::remove_dir_all(&test_dir).unwrap();
+    }
+
+    #[test]
+    fn test_copy_non_md_files() {
+        let test_dir = std::env::temp_dir().join("md-wiki-copy-test");
+        let input_dir = test_dir.join("input");
+        let output_dir = test_dir.join("output");
+
+        // Clean up if exists
+        let _ = fs::remove_dir_all(&test_dir);
+
+        // Create test directories
+        fs::create_dir_all(&input_dir).unwrap();
+        fs::create_dir_all(&output_dir).unwrap();
+
+        // Create test markdown file
+        fs::write(
+            input_dir.join("test.md"),
+            "# Test Page\n\nContent here.",
+        )
+        .unwrap();
+
+        // Create non-markdown files
+        fs::write(
+            input_dir.join("style.css"),
+            "body { color: red; }",
+        )
+        .unwrap();
+        
+        fs::write(
+            input_dir.join("script.js"),
+            "console.log('test');",
+        )
+        .unwrap();
+
+        // Create a subdirectory with files
+        fs::create_dir_all(&input_dir.join("assets")).unwrap();
+        fs::write(
+            input_dir.join("assets").join("image.txt"),
+            "fake image data",
+        )
+        .unwrap();
+
+        // Convert
+        convert_wiki(
+            input_dir.to_str().unwrap(),
+            output_dir.to_str().unwrap(),
+            None
+        ).unwrap();
+
+        // Check that HTML file was created
+        assert!(output_dir.join("test.html").exists(), "HTML file should be created");
+
+        // Check that non-markdown files were copied
+        assert!(output_dir.join("style.css").exists(), "CSS file should be copied");
+        assert!(output_dir.join("script.js").exists(), "JS file should be copied");
+        assert!(output_dir.join("assets").join("image.txt").exists(), "Subdirectory file should be copied");
+
+        // Verify content of copied files
+        let css_content = fs::read_to_string(output_dir.join("style.css")).unwrap();
+        assert_eq!(css_content, "body { color: red; }");
+
+        // Clean up
+        fs::remove_dir_all(&test_dir).unwrap();
+    }
+
+    #[test]
+    fn test_directory_structure_preserved() {
+        let test_dir = std::env::temp_dir().join("md-wiki-structure-test");
+        let input_dir = test_dir.join("input");
+        let output_dir = test_dir.join("output");
+
+        // Clean up if exists
+        let _ = fs::remove_dir_all(&test_dir);
+
+        // Create test directories
+        fs::create_dir_all(&input_dir).unwrap();
+        fs::create_dir_all(&output_dir).unwrap();
+
+        // Create markdown files in subdirectories
+        fs::create_dir_all(&input_dir.join("docs")).unwrap();
+        fs::write(
+            input_dir.join("docs").join("guide.md"),
+            "# Guide\n\nContent here.",
+        )
+        .unwrap();
+
+        fs::create_dir_all(&input_dir.join("notes").join("2024")).unwrap();
+        fs::write(
+            input_dir.join("notes").join("2024").join("january.md"),
+            "# January Notes\n\nNotes here.",
+        )
+        .unwrap();
+
+        // Convert
+        convert_wiki(
+            input_dir.to_str().unwrap(),
+            output_dir.to_str().unwrap(),
+            None
+        ).unwrap();
+
+        // Check that directory structure is preserved
+        assert!(output_dir.join("docs").join("guide.html").exists(), 
+                "docs/guide.html should exist");
+        assert!(output_dir.join("notes").join("2024").join("january.html").exists(), 
+                "notes/2024/january.html should exist");
 
         // Clean up
         fs::remove_dir_all(&test_dir).unwrap();
