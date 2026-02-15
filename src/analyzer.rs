@@ -151,16 +151,15 @@ impl Analyzer {
 fn slugify(text: &str) -> String {
     text.to_lowercase()
         .chars()
-        .map(|c| {
+        .filter_map(|c| {
             if c.is_alphanumeric() {
-                c
+                Some(c)
             } else if c.is_whitespace() || c == '-' {
-                '-'
+                Some('-')
             } else {
-                '\0'
+                None
             }
         })
-        .filter(|&c| c != '\0')
         .collect::<String>()
         .split('-')
         .filter(|s| !s.is_empty())

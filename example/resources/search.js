@@ -7,7 +7,10 @@
         if (searchIndex) return searchIndex;
         
         try {
-            const response = await fetch('index.json');
+            // Compute path to index.json relative to current page
+            const pathDepth = (window.location.pathname.match(/\//g) || []).length - 1;
+            const prefix = pathDepth > 1 ? '../'.repeat(pathDepth - 1) : '';
+            const response = await fetch(prefix + 'index.json');
             searchIndex = await response.json();
             return searchIndex;
         } catch (error) {
