@@ -66,7 +66,7 @@ wiki/
 ├── notes.md            # Converted to notes.html
 ├── zettelkasten.md     # Converted to zettelkasten.html
 ├── style.css           # Copied as-is
-└── resources/
+└── assets/
     ├── search.js       # Copied as-is
     └── images/
         └── logo.png    # Copied as-is

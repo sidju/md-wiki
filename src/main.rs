@@ -2,6 +2,7 @@ mod analyzer;
 mod link_translator;
 mod html_aggregator;
 
+use clap::Parser as ClapParser;
 use pulldown_cmark::{Options, Parser};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,51 +12,27 @@ use analyzer::Analyzer;
 use link_translator::translate_link;
 use html_aggregator::HtmlAggregator;
 
+/// A minimal static wiki generator using markdown files as input
+#[derive(ClapParser, Debug)]
+#[command(name = "md-wiki")]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Directory containing markdown files
+    input_directory: String,
+
+    /// Directory where HTML files will be created
+    #[arg(default_value = ".")]
+    output_directory: String,
+
+    /// Optional path where search index will be written
+    #[arg(long = "search-index")]
+    search_index: Option<String>,
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    
-    // Parse arguments
-    let mut input_dir: Option<&str> = None;
-    let mut output_dir: Option<&str> = None;
-    let mut search_index_path: Option<String> = None;
-    let mut i = 1;
-    
-    while i < args.len() {
-        if args[i] == "--search-index" {
-            if i + 1 < args.len() {
-                search_index_path = Some(args[i + 1].clone());
-                i += 2;
-            } else {
-                eprintln!("Error: --search-index requires a path argument");
-                std::process::exit(1);
-            }
-        } else if input_dir.is_none() {
-            input_dir = Some(&args[i]);
-            i += 1;
-        } else if output_dir.is_none() {
-            output_dir = Some(&args[i]);
-            i += 1;
-        } else {
-            eprintln!("Error: Unexpected argument: {}", args[i]);
-            std::process::exit(1);
-        }
-    }
+    let args = Args::parse();
 
-    // Validate that input_dir was provided
-    let input_dir = match input_dir {
-        Some(dir) => dir,
-        None => {
-            eprintln!("Usage: md-wiki <input_directory> [output_directory] [--search-index <path>]");
-            eprintln!("  input_directory:  Directory containing markdown files");
-            eprintln!("  output_directory: Directory where HTML files will be created (default: current directory)");
-            eprintln!("  --search-index:   Optional path where search index will be written");
-            std::process::exit(1);
-        }
-    };
-
-    let output_dir = output_dir.unwrap_or(".");
-
-    match convert_wiki(input_dir, output_dir, search_index_path.as_deref()) {
+    match convert_wiki(&args.input_directory, &args.output_directory, args.search_index.as_deref()) {
         Ok(_) => println!("Successfully converted markdown files to HTML"),
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -94,6 +71,8 @@ fn convert_wiki(input_dir: &str, output_dir: &str, search_index_path: Option<&st
         }
         
         // Skip header.html and footer.html as they are templates
+        // If file_name can't be converted to str, unwrap_or("") returns empty string
+        // which won't match "header.html" or "footer.html", so the file will be processed normally
         let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         if file_name == "header.html" || file_name == "footer.html" {
             continue;
