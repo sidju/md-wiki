@@ -417,8 +417,9 @@ mod tests {
         // Verify the data can be parsed as valid JSON
         let data_match = search_data_content
             .strip_prefix("window.SEARCH_INDEX_DATA = ")
-            .and_then(|s| s.strip_suffix(";"))
-            .unwrap();
+            .expect("search-data.js should start with 'window.SEARCH_INDEX_DATA = '")
+            .strip_suffix(";")
+            .expect("search-data.js should end with ';'");
         let search_data_json: serde_json::Value = serde_json::from_str(data_match).unwrap();
         
         assert!(search_data_json.get("documents").is_some(), 
