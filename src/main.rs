@@ -145,9 +145,18 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
     // Finalize analyzer and generate search index
     let search_index = analyzer.finalize();
     let index_json = serde_json::to_string_pretty(&search_index)?;
+    
+    // Always write index.json (for http:// protocol access)
     let index_path = Path::new(output_dir).join("index.json");
-    fs::write(&index_path, index_json)?;
+    fs::write(&index_path, index_json.clone())?;
     println!("Created: {}", index_path.display());
+    
+    // Also create search-data.js with embedded index (for file:// protocol support)
+    // Users can optionally include this file to enable search when opening HTML files locally
+    let search_data_content = format!("window.SEARCH_INDEX_DATA = {};", index_json);
+    let search_data_path = Path::new(output_dir).join("search-data.js");
+    fs::write(&search_data_path, search_data_content)?;
+    println!("Created: {} (for local file:// protocol support)", search_data_path.display());
     
     // Copy resources folder if it exists
     let resources_src = Path::new(input_dir).join("resources");

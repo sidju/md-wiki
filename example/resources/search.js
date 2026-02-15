@@ -2,10 +2,17 @@
 (function() {
     let searchIndex = null;
     
-    // Load the index.json file
+    // Load the index - tries embedded data first, then fetches index.json
     async function loadIndex() {
         if (searchIndex) return searchIndex;
         
+        // Check if search index was embedded (for local file:// protocol support)
+        if (window.SEARCH_INDEX_DATA) {
+            searchIndex = window.SEARCH_INDEX_DATA;
+            return searchIndex;
+        }
+        
+        // Otherwise, try to fetch index.json (works with http:// protocol)
         try {
             // Compute path to index.json relative to current page
             const pathDepth = (window.location.pathname.match(/\//g) || []).length - 1;
