@@ -90,7 +90,24 @@ cargo build
 
 Then open `example/output/index.html` in your browser.
 
+## Search Functionality
+
+md-wiki automatically generates a search index when converting markdown files:
+
+- **`search-data.js`**: JavaScript file that embeds the search index as `window.SEARCH_INDEX_DATA` (global variable)
+
+To enable search in your wiki, include this file in your header template:
+
+```html
+<script src="search-data.js"></script>
+```
+
+And include the search UI components provided in the example's `resources/search.js`.
+
+The search functionality works both when opening HTML files directly from your filesystem (`file://` protocol) and when serving files via a web server (`http://` protocol).
+
 ## License
 
 MIT License - see LICENSE file for details.
+
 

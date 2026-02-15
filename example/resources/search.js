@@ -2,28 +2,18 @@
 (function() {
     let searchIndex = null;
     
-    // Load the index - tries embedded data first, then fetches index.json
+    // Load the index from embedded data
     async function loadIndex() {
         if (searchIndex) return searchIndex;
         
-        // Check if search index was embedded (for local file:// protocol support)
+        // Use the embedded search index data
         if (window.SEARCH_INDEX_DATA) {
             searchIndex = window.SEARCH_INDEX_DATA;
             return searchIndex;
         }
         
-        // Otherwise, try to fetch index.json (works with http:// protocol)
-        try {
-            // Compute path to index.json relative to current page
-            const pathDepth = (window.location.pathname.match(/\//g) || []).length - 1;
-            const prefix = pathDepth > 1 ? '../'.repeat(pathDepth - 1) : '';
-            const response = await fetch(prefix + 'index.json');
-            searchIndex = await response.json();
-            return searchIndex;
-        } catch (error) {
-            console.error('Failed to load search index:', error);
-            return null;
-        }
+        console.error('Search index data not found. Make sure search-data.js is included before search.js');
+        return null;
     }
     
     // Search the index for matching documents and headings
