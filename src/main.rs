@@ -14,17 +14,9 @@ use html_aggregator::HtmlAggregator;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     
-    if args.len() < 2 {
-        eprintln!("Usage: md-wiki <input_directory> [output_directory] [--search-index <path>]");
-        eprintln!("  input_directory:  Directory containing markdown files");
-        eprintln!("  output_directory: Directory where HTML files will be created (default: current directory)");
-        eprintln!("  --search-index:   Optional path where search index will be written");
-        std::process::exit(1);
-    }
-
     // Parse arguments
-    let mut input_dir = "";
-    let mut output_dir = ".";
+    let mut input_dir: Option<&str> = None;
+    let mut output_dir: Option<&str> = None;
     let mut search_index_path: Option<String> = None;
     let mut i = 1;
     
@@ -37,17 +29,31 @@ fn main() {
                 eprintln!("Error: --search-index requires a path argument");
                 std::process::exit(1);
             }
-        } else if input_dir.is_empty() {
-            input_dir = &args[i];
+        } else if input_dir.is_none() {
+            input_dir = Some(&args[i]);
             i += 1;
-        } else if output_dir == "." {
-            output_dir = &args[i];
+        } else if output_dir.is_none() {
+            output_dir = Some(&args[i]);
             i += 1;
         } else {
             eprintln!("Error: Unexpected argument: {}", args[i]);
             std::process::exit(1);
         }
     }
+
+    // Validate that input_dir was provided
+    let input_dir = match input_dir {
+        Some(dir) => dir,
+        None => {
+            eprintln!("Usage: md-wiki <input_directory> [output_directory] [--search-index <path>]");
+            eprintln!("  input_directory:  Directory containing markdown files");
+            eprintln!("  output_directory: Directory where HTML files will be created (default: current directory)");
+            eprintln!("  --search-index:   Optional path where search index will be written");
+            std::process::exit(1);
+        }
+    };
+
+    let output_dir = output_dir.unwrap_or(".");
 
     match convert_wiki(input_dir, output_dir, search_index_path.as_deref()) {
         Ok(_) => println!("Successfully converted markdown files to HTML"),
