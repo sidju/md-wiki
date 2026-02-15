@@ -1,52 +1,15 @@
-use pulldown_cmark::{html, Event, Options, Parser, Tag, CowStr};
-use std::collections::HashMap;
+mod analyzer;
+mod link_translator;
+mod html_aggregator;
+
+use pulldown_cmark::{Options, Parser};
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-/// Convert text to a URL-friendly slug for heading IDs
-fn slugify(text: &str) -> String {
-    text.to_lowercase()
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() {
-                c
-            } else if c.is_whitespace() || c == '-' {
-                '-'
-            } else {
-                '\0'
-            }
-        })
-        .filter(|&c| c != '\0')
-        .collect::<String>()
-        .split('-')
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
-}
-
-/// Translate .md links to .html links in markdown events
-fn translate_links(event: Event) -> Event {
-    match event {
-        Event::Start(Tag::Link { link_type, dest_url, title, id }) => {
-            // Handle .md links with or without fragments
-            let new_url = if let Some(hash_pos) = dest_url.find('#') {
-                let (path, fragment) = dest_url.split_at(hash_pos);
-                if path.ends_with(".md") {
-                    format!("{}{}", path.replace(".md", ".html"), fragment).into()
-                } else {
-                    dest_url
-                }
-            } else if dest_url.ends_with(".md") {
-                dest_url.replace(".md", ".html").into()
-            } else {
-                dest_url
-            };
-            Event::Start(Tag::Link { link_type, dest_url: new_url, title, id })
-        }
-        _ => event,
-    }
-}
+use analyzer::Analyzer;
+use link_translator::translate_link;
+use html_aggregator::HtmlAggregator;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -104,10 +67,10 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
     // Create output directory if it doesn't exist
     fs::create_dir_all(output_dir)?;
 
-    // Build link graph: for each file, track which files link to it
-    let mut backlinks: HashMap<String, Vec<String>> = HashMap::new();
+    // Create analyzer to track backlinks across all files
+    let mut analyzer = Analyzer::new();
 
-    // Convert each markdown file to HTML
+    // Convert each markdown file to HTML using streaming design
     for md_path in &markdown_files {
         let content = fs::read_to_string(md_path)?;
         
@@ -117,6 +80,9 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
             .unwrap_or("")
             .to_string();
         
+        // Set current file in analyzer
+        analyzer.set_current_file(file_name.clone());
+        
         // Parse markdown with options
         let mut options = Options::empty();
         options.insert(Options::ENABLE_STRIKETHROUGH);
@@ -124,83 +90,19 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
         options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
         let parser = Parser::new_ext(&content, options);
         
-        // Track links and convert to HTML using functional approach
+        // Stream events through the processing pipeline:
+        // 1. Analyze (track backlinks)
+        // 2. Translate links (.md -> .html)
+        // 3. Ingest into HTML aggregator (converts to 'static and handles lookahead for heading IDs)
         let html_content = {
-            // First pass: track backlinks THEN translate links using .map()
-            let events: Vec<Event> = parser
-                .map(|event| {
-                    // Track links for backlinks BEFORE translation
-                    if let Event::Start(Tag::Link { ref dest_url, .. }) = event {
-                        let link = dest_url.to_string();
-                        // Handle links with or without fragments (e.g., "file.md" or "file.md#heading")
-                        let base_link = if let Some(pos) = link.find('#') {
-                            &link[..pos]
-                        } else {
-                            &link
-                        };
-                        if base_link.ends_with(".md") {
-                            // Store just the filename part for backlinks
-                            let filename = base_link.to_string();
-                            backlinks
-                                .entry(filename)
-                                .or_default()
-                                .push(file_name.clone());
-                        }
-                    }
-                    event
-                })
-                .map(translate_links)
-                .collect();
+            let aggregator = parser
+                .map(|event| analyzer.analyze(event))
+                .map(translate_link)
+                .fold(HtmlAggregator::new(), |aggregator, event| {
+                    aggregator.ingest(event)
+                });
             
-            // Second pass: add IDs to headings (requires lookahead)
-            let mut processed_events = Vec::new();
-            let mut i = 0;
-            
-            while i < events.len() {
-                match &events[i] {
-                    Event::Start(Tag::Heading { level, id, classes, attrs }) => {
-                        // Only generate ID if one wasn't already provided in markdown
-                        let heading_id = if id.is_none() {
-                            // Look ahead to collect heading text for ID generation
-                            let mut current_heading_text = String::new();
-                            let mut j = i + 1;
-                            while j < events.len() {
-                                if let Event::End(pulldown_cmark::TagEnd::Heading(_)) = events[j] {
-                                    break;
-                                }
-                                if let Event::Text(ref text) = events[j] {
-                                    current_heading_text.push_str(text);
-                                }
-                                j += 1;
-                            }
-                            
-                            // Generate ID from heading text
-                            if !current_heading_text.is_empty() {
-                                Some(CowStr::from(slugify(&current_heading_text)))
-                            } else {
-                                None
-                            }
-                        } else {
-                            id.clone()
-                        };
-                        
-                        processed_events.push(Event::Start(Tag::Heading {
-                            level: *level,
-                            id: heading_id,
-                            classes: classes.clone(),
-                            attrs: attrs.clone(),
-                        }));
-                    }
-                    _ => {
-                        processed_events.push(events[i].clone());
-                    }
-                }
-                i += 1;
-            }
-            
-            let mut html_output = String::new();
-            html::push_html(&mut html_output, processed_events.into_iter());
-            html_output
+            aggregator.to_html_string()
         };
 
         // Get the file name without extension
@@ -217,7 +119,7 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
 
         // Build backlinks section
         let mut backlinks_html = String::new();
-        if let Some(links) = backlinks.get(&md_file_name)
+        if let Some(links) = analyzer.get_backlinks().get(&md_file_name)
             && !links.is_empty() {
                 backlinks_html.push_str("<hr>\n<h2>Linked from:</h2>\n<ul>\n");
                 for link in links {
