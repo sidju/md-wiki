@@ -71,8 +71,9 @@ fn convert_wiki(input_dir: &str, output_dir: &str, search_index_path: Option<&st
         }
         
         // Skip header.html and footer.html as they are templates
-        // If file_name can't be converted to str, unwrap_or("") returns empty string
-        // which won't match "header.html" or "footer.html", so the file will be processed normally
+        // Note: Files with non-UTF8 names won't be skipped even if they're actually
+        // named header.html or footer.html, but this is an extremely rare edge case
+        // and such files would fail to process correctly anyway
         let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         if file_name == "header.html" || file_name == "footer.html" {
             continue;

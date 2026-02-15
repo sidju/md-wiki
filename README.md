@@ -23,12 +23,12 @@ The binary will be available at `target/release/md-wiki`.
 ## Usage
 
 ```bash
-md-wiki <input_directory> [output_directory] [--search-index <path>]
+md-wiki [OPTIONS] <INPUT_DIRECTORY> [OUTPUT_DIRECTORY]
 ```
 
-- `input_directory`: Directory containing your markdown files
-- `output_directory`: Where HTML files will be created (optional, defaults to current directory)
-- `--search-index`: Optional path where search index will be written
+- `INPUT_DIRECTORY`: Directory containing your markdown files
+- `OUTPUT_DIRECTORY`: Where HTML files will be created (optional, defaults to current directory)
+- `--search-index <PATH>`: Optional path where search index will be written
 
 ### Examples
 
