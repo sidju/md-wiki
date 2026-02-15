@@ -145,9 +145,12 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
     // Finalize analyzer and generate search index
     let search_index = analyzer.finalize();
     let index_json = serde_json::to_string_pretty(&search_index)?;
-    let index_path = Path::new(output_dir).join("index.json");
-    fs::write(&index_path, index_json)?;
-    println!("Created: {}", index_path.display());
+    
+    // Create search-data.js with embedded index
+    let search_data_content = format!("window.SEARCH_INDEX_DATA = {};", index_json);
+    let search_data_path = Path::new(output_dir).join("search-data.js");
+    fs::write(&search_data_path, search_data_content)?;
+    println!("Created: {}", search_data_path.display());
     
     // Copy resources folder if it exists
     let resources_src = Path::new(input_dir).join("resources");
@@ -363,6 +366,64 @@ mod tests {
         
         // Should NOT have auto-generated IDs for headings with custom IDs
         assert!(!content.contains(r#"id="custom-id""#), "Should not auto-generate when custom ID exists");
+
+        // Clean up
+        fs::remove_dir_all(&test_dir).unwrap();
+    }
+
+    #[test]
+    fn test_search_data_generation() {
+        let test_dir = std::env::temp_dir().join("md-wiki-search-test");
+        let input_dir = test_dir.join("input");
+        let output_dir = test_dir.join("output");
+
+        // Clean up if exists
+        let _ = fs::remove_dir_all(&test_dir);
+
+        // Create test directories
+        fs::create_dir_all(&input_dir).unwrap();
+        fs::create_dir_all(&output_dir).unwrap();
+
+        // Create test markdown file with headings
+        fs::write(
+            input_dir.join("page1.md"),
+            "# Main Heading\n\nContent here.\n\n## Sub Heading\n\nMore content.",
+        )
+        .unwrap();
+
+        // Convert
+        convert_wiki(
+            input_dir.to_str().unwrap(),
+            output_dir.to_str().unwrap()
+        ).unwrap();
+
+        // Check that search-data.js exists
+        let search_data_path = output_dir.join("search-data.js");
+        assert!(search_data_path.exists(), "search-data.js should be created");
+
+        // Verify search-data.js contains the expected structure
+        let search_data_content = fs::read_to_string(&search_data_path).unwrap();
+        assert!(search_data_content.starts_with("window.SEARCH_INDEX_DATA = {"), 
+                "search-data.js should set window.SEARCH_INDEX_DATA");
+        assert!(search_data_content.contains("\"documents\""), 
+                "search-data.js should contain documents");
+        assert!(search_data_content.contains("page1.html"), 
+                "search-data.js should reference page1.html");
+        assert!(search_data_content.contains("Main Heading"), 
+                "search-data.js should contain heading text");
+        assert!(search_data_content.contains("Sub Heading"), 
+                "search-data.js should contain all headings");
+
+        // Verify the data can be parsed as valid JSON
+        let data_match = search_data_content
+            .strip_prefix("window.SEARCH_INDEX_DATA = ")
+            .expect("search-data.js should start with 'window.SEARCH_INDEX_DATA = '")
+            .strip_suffix(";")
+            .expect("search-data.js should end with ';'");
+        let search_data_json: serde_json::Value = serde_json::from_str(data_match).unwrap();
+        
+        assert!(search_data_json.get("documents").is_some(), 
+                "Parsed data should have documents field");
 
         // Clean up
         fs::remove_dir_all(&test_dir).unwrap();

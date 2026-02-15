@@ -2,21 +2,18 @@
 (function() {
     let searchIndex = null;
     
-    // Load the index.json file
+    // Load the index from embedded data
     async function loadIndex() {
         if (searchIndex) return searchIndex;
         
-        try {
-            // Compute path to index.json relative to current page
-            const pathDepth = (window.location.pathname.match(/\//g) || []).length - 1;
-            const prefix = pathDepth > 1 ? '../'.repeat(pathDepth - 1) : '';
-            const response = await fetch(prefix + 'index.json');
-            searchIndex = await response.json();
+        // Use the embedded search index data
+        if (window.SEARCH_INDEX_DATA) {
+            searchIndex = window.SEARCH_INDEX_DATA;
             return searchIndex;
-        } catch (error) {
-            console.error('Failed to load search index:', error);
-            return null;
         }
+        
+        console.error('Search index data not found. Make sure search-data.js is included before search.js');
+        return null;
     }
     
     // Search the index for matching documents and headings
