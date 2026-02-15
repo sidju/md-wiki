@@ -142,6 +142,38 @@ fn convert_wiki(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn std::er
         println!("Created: {}", output_path.display());
     }
 
+    // Finalize analyzer and generate search index
+    let search_index = analyzer.finalize();
+    let index_json = serde_json::to_string_pretty(&search_index)?;
+    let index_path = Path::new(output_dir).join("index.json");
+    fs::write(&index_path, index_json)?;
+    println!("Created: {}", index_path.display());
+    
+    // Copy resources folder if it exists
+    let resources_src = Path::new(input_dir).join("resources");
+    if resources_src.exists() && resources_src.is_dir() {
+        let resources_dst = Path::new(output_dir).join("resources");
+        fs::create_dir_all(&resources_dst)?;
+        
+        for entry in WalkDir::new(&resources_src) {
+            let entry = entry?;
+            let path = entry.path();
+            
+            if path.is_file() {
+                let relative_path = path.strip_prefix(&resources_src)?;
+                let dest_path = resources_dst.join(relative_path);
+                
+                // Create parent directory if needed
+                if let Some(parent) = dest_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                
+                fs::copy(path, &dest_path)?;
+                println!("Copied: {}", dest_path.display());
+            }
+        }
+    }
+
     Ok(())
 }
 
