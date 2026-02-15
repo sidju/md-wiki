@@ -23,17 +23,21 @@ The binary will be available at `target/release/md-wiki`.
 ## Usage
 
 ```bash
-md-wiki <input_directory> [output_directory]
+md-wiki <input_directory> [output_directory] [--search-index <path>]
 ```
 
 - `input_directory`: Directory containing your markdown files
 - `output_directory`: Where HTML files will be created (optional, defaults to current directory)
+- `--search-index`: Optional path where search index will be written
 
-### Example
+### Examples
 
 ```bash
 # Convert markdown files in 'wiki' directory to HTML in 'output' directory
 md-wiki wiki output
+
+# Generate with search index for search functionality
+md-wiki wiki output --search-index output/search-data.js
 
 # Using example files
 md-wiki example example/output
@@ -41,11 +45,14 @@ md-wiki example example/output
 
 ## Directory Structure
 
-Your input directory should contain:
+Your input directory can contain:
 
-- **Markdown files** (`.md`): Your wiki content
+- **Markdown files** (`.md`): Your wiki content - will be converted to HTML
+- **Other files** (CSS, JS, images, etc.): Will be copied as-is to the output directory
 - **header.html** (optional): HTML to prepend to each page
 - **footer.html** (optional): HTML to append to each page
+
+All files (except `header.html` and `footer.html`) will be copied to the output directory, maintaining the same directory structure. Markdown files will be converted to HTML with the `.html` extension.
 
 If `header.html` or `footer.html` are not provided, default minimal HTML will be used.
 
@@ -53,20 +60,26 @@ If `header.html` or `footer.html` are not provided, default minimal HTML will be
 
 ```
 wiki/
-├── header.html
-├── footer.html
-├── index.md
-├── notes.md
-└── zettelkasten.md
+├── header.html          # Optional template
+├── footer.html          # Optional template
+├── index.md            # Converted to index.html
+├── notes.md            # Converted to notes.html
+├── zettelkasten.md     # Converted to zettelkasten.html
+├── style.css           # Copied as-is
+└── resources/
+    ├── search.js       # Copied as-is
+    └── images/
+        └── logo.png    # Copied as-is
 ```
 
 ## How it Works
 
-1. **Scans** all markdown files in the input directory
-2. **Analyzes** links between files to build a backlink graph
-3. **Converts** each markdown file to HTML
-4. **Combines** header + content + backlinks + footer
-5. **Outputs** HTML files with the same names as the markdown files
+1. **Scans** all files in the input directory recursively
+2. **Analyzes** markdown files to build a backlink graph
+3. **Converts** each markdown file to HTML (preserving directory structure)
+4. **Copies** all non-.md files to output (preserving directory structure)
+5. **Combines** header + content + backlinks + footer for each HTML page
+6. **Optionally generates** search index if `--search-index` flag is provided
 
 ## Backlinks
 
@@ -92,9 +105,14 @@ Then open `example/output/index.html` in your browser.
 
 ## Search Functionality
 
-md-wiki automatically generates a search index when converting markdown files:
+md-wiki can optionally generate a search index when converting markdown files:
 
-- **`search-data.js`**: JavaScript file that embeds the search index as `window.SEARCH_INDEX_DATA` (global variable)
+```bash
+# Generate wiki with search index
+md-wiki example example/output --search-index example/output/search-data.js
+```
+
+This creates a JavaScript file that embeds the search index as `window.SEARCH_INDEX_DATA` (global variable).
 
 To enable search in your wiki, include this file in your header template:
 
@@ -102,7 +120,9 @@ To enable search in your wiki, include this file in your header template:
 <script src="search-data.js"></script>
 ```
 
-And include the search UI components provided in the example's `resources/search.js`.
+And include the search UI components. The example's `resources/search.js` provides a reference implementation.
+
+**Note:** If you don't need search functionality, simply omit the `--search-index` flag and no search index will be generated.
 
 The search functionality works both when opening HTML files directly from your filesystem (`file://` protocol) and when serving files via a web server (`http://` protocol).
 
