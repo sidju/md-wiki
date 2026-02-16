@@ -63,7 +63,7 @@ pub fn convert_wiki<FS: FileSystem>(
     // Create analyzer to track backlinks across all files
     let mut analyzer = Analyzer::new();
 
-    // Convert each markdown file to HTML using streaming design
+    // FIRST PASS: Analyze all markdown files to build complete backlinks map
     for md_path in &markdown_files {
         let content = fs.read_to_string(md_path)?;
         
@@ -83,13 +83,32 @@ pub fn convert_wiki<FS: FileSystem>(
         options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
         let parser = Parser::new_ext(&content, options);
         
-        // Stream events through the processing pipeline:
-        // 1. Analyze (track backlinks)
-        // 2. Translate links (.md -> .html)
-        // 3. Ingest into HTML aggregator (converts to 'static and handles lookahead for heading IDs)
+        // Analyze to build backlinks and heading index
+        for event in parser {
+            analyzer.analyze(event);
+        }
+    }
+
+    // SECOND PASS: Generate HTML files with complete backlinks available
+    for md_path in &markdown_files {
+        let content = fs.read_to_string(md_path)?;
+        
+        let file_name = md_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        
+        // Parse markdown with options
+        let mut options = Options::empty();
+        options.insert(Options::ENABLE_STRIKETHROUGH);
+        options.insert(Options::ENABLE_TABLES);
+        options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+        let parser = Parser::new_ext(&content, options);
+        
+        // Generate HTML (translate links and aggregate)
         let html_content = {
             let aggregator = parser
-                .map(|event| analyzer.analyze(event))
                 .map(translate_link)
                 .fold(HtmlAggregator::new(), |aggregator, event| {
                     aggregator.ingest(event)
@@ -104,7 +123,7 @@ pub fn convert_wiki<FS: FileSystem>(
             .unwrap_or("")
             .to_string();
 
-        // Build backlinks section
+        // Build backlinks section (now all backlinks are available)
         let mut backlinks_html = String::new();
         if let Some(links) = analyzer.get_backlinks().get(&md_file_name)
             && !links.is_empty() {
