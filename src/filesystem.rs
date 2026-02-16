@@ -82,6 +82,10 @@ impl MockFileSystem {
     pub fn get_file(&self, path: &Path) -> Option<String> {
         self.files.borrow().get(path).cloned()
     }
+    
+    pub fn file_count(&self) -> usize {
+        self.files.borrow().len()
+    }
 }
 
 impl Default for MockFileSystem {
