@@ -129,7 +129,14 @@ fn test_deduplication_in_categories() {
     
     // Page should appear only once in category listing
     let category_content = fixture.get_output("test.html").unwrap();
-    let count = category_content.matches("page.html").count();
+    
+    // Extract just the category section
+    let category_section = category_content
+        .split("Pages in this category:")
+        .nth(1)
+        .expect("Should have category section");
+    
+    let count = category_section.matches("page.html").count();
     assert_eq!(count, 1, "page.html should appear exactly once in category listing, but appeared {} times", count);
 }
 
