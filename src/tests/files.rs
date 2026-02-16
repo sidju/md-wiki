@@ -27,16 +27,28 @@ fn test_copy_non_md_files() {
 }
 
 #[test]
-fn test_directory_structure_preserved() {
+fn test_markdown_files_in_subdirectories_copied_not_processed() {
+    // Markdown files in subdirectories should be copied as-is, not processed
     let fixture = WikiTestFixture::new();
     
     fixture
         .add_file("docs/guide.md", "# Guide\n\nContent here.")
-        .add_file("notes/2024/january.md", "# January Notes\n\nNotes here.");
+        .add_markdown_file("index.md", "# Index\n\nRoot file.");
     
-    fixture.convert().expect("Conversion should succeed");
+    // Should succeed (with warning to stderr)
+    fixture.convert().expect("Should succeed with warning");
     
-    // Check that directory structure is preserved
-    fixture.assert_output_exists("docs/guide.html");
-    fixture.assert_output_exists("notes/2024/january.html");
+    // Root markdown file should be processed to HTML
+    fixture.assert_output_exists("index.html");
+    let index_html = fixture.get_output("index.html").unwrap();
+    assert!(index_html.contains("<h1"), "Root file should be processed to HTML");
+    
+    // Subdirectory markdown file should be copied as-is (not processed)
+    fixture.assert_output_exists("docs/guide.md");
+    let guide_md = fixture.get_output("docs/guide.md").unwrap();
+    assert_eq!(guide_md, "# Guide\n\nContent here.", "Nested .md should be copied as-is");
+    
+    // Should NOT create guide.html
+    assert!(fixture.get_output("docs/guide.html").is_none(), 
+            "Nested .md files should not be processed to HTML");
 }

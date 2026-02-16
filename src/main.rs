@@ -81,7 +81,17 @@ fn convert_wiki<FS: FileSystem>(
         }
         
         if path.extension().and_then(|s| s.to_str()) == Some("md") {
-            markdown_files.push(path);
+            // Check if markdown file is in a subdirectory
+            let relative_path = path.strip_prefix(input_dir)?;
+            if relative_path.parent().is_some_and(|p| p.as_os_str() != "") {
+                // Warn and treat as regular file (copy without processing)
+                eprintln!("Warning: Markdown files should be in the source directory root.");
+                eprintln!("  Found: {} - copying without processing", relative_path.display());
+                other_files.push(path);
+            } else {
+                // Markdown file in root - process it
+                markdown_files.push(path);
+            }
         } else {
             other_files.push(path);
         }
@@ -99,15 +109,15 @@ fn convert_wiki<FS: FileSystem>(
     for md_path in &markdown_files {
         let content = fs.read_to_string(md_path)?;
         
-        // Use relative path instead of just filename to avoid conflicts
-        let relative_path = md_path.strip_prefix(input_dir)?;
-        let relative_path_str = relative_path
-            .to_str()
-            .ok_or("Non-UTF8 path")?
+        // Since all markdown files are in root, we can use just the filename
+        let file_name = md_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or("Non-UTF8 filename")?
             .to_string();
         
-        // Set current file in analyzer (using relative path)
-        analyzer.set_current_file(relative_path_str.clone());
+        // Set current file in analyzer (using filename)
+        analyzer.set_current_file(file_name.clone());
         
         // Parse markdown with options
         let mut options = Options::empty();
@@ -131,15 +141,15 @@ fn convert_wiki<FS: FileSystem>(
             aggregator.to_html_string()
         };
         
-        // Store the generated HTML and relative path for second pass
-        generated_html.push((md_path.clone(), relative_path_str, html_content));
+        // Store the generated HTML and filename for second pass
+        generated_html.push((md_path.clone(), file_name, html_content));
     }
 
     // SECOND PASS: Add backlinks and write files (now all backlinks are complete)
-    for (md_path, relative_md_path, html_content) in generated_html {
+    for (md_path, md_file_name, html_content) in generated_html {
         // Build backlinks section (now all backlinks are available)
         let mut backlinks_html = String::new();
-        if let Some(links) = analyzer.get_backlinks().get(&relative_md_path)
+        if let Some(links) = analyzer.get_backlinks().get(&md_file_name)
             && !links.is_empty() {
                 backlinks_html.push_str("<hr>\n<h2>Linked from:</h2>\n<ul>\n");
                 for link in links {
