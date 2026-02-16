@@ -58,9 +58,14 @@ fn test_external_urls_not_tracked() {
     // Test that external URLs (with schemes or protocol-relative) are not tracked as backlinks
     let fixture = WikiTestFixture::new();
     
+    let page1_content = "# Page 1\n\n\
+        This links to [External](https://example.com/page.html) \
+        and [Protocol Relative](//cdn.example.com/file.html).";
+    let page2_content = "# Page 2\n\nThis links to [Internal](page1.md).";
+    
     fixture
-        .add_markdown_file("page1.md", "# Page 1\n\nThis links to [External](https://example.com/page.html) and [Protocol Relative](//cdn.example.com/file.html).")
-        .add_markdown_file("page2.md", "# Page 2\n\nThis links to [Internal](page1.md).");
+        .add_markdown_file("page1.md", page1_content)
+        .add_markdown_file("page2.md", page2_content);
     
     fixture.convert().expect("Conversion should succeed");
     
