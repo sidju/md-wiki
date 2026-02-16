@@ -84,8 +84,10 @@ impl Analyzer {
                 &link
             };
             // Only track relative wiki links (no scheme or host)
-            // Skip URLs with schemes (http://, https://, ftp://, etc.)
-            // Skip protocol-relative URLs (//example.com/...)
+            // Skip URLs with schemes like http://, https://, ftp://, file://, etc.
+            // Skip protocol-relative URLs starting with //
+            // This allows relative paths (page.html, ./page.html, ../page.html)
+            // and absolute wiki paths (/page.html) while filtering external URLs
             let is_relative = !base_link.contains("://") && !base_link.starts_with("//");
             
             if is_relative && base_link.ends_with(".html") {
