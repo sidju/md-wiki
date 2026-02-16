@@ -6,6 +6,8 @@ pub mod backlinks;
 pub mod files;
 pub mod search;
 pub mod headings;
+pub mod hashtags;
+pub mod categories;
 
 /// Test fixture for setting up a mock filesystem with common test data
 pub struct WikiTestFixture {
