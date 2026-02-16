@@ -52,3 +52,29 @@ fn test_backlinks_order_independent() {
     // aaa.html should still have the backlink to zzz, and verify structure
     fixture.assert_output_contains("aaa.html", "<hr>\n<h2>Linked from:</h2>\n<ul>\n<li><a href=\"zzz.html\">zzz</a></li>");
 }
+
+#[test]
+fn test_external_urls_not_tracked() {
+    // Test that external URLs (with schemes or protocol-relative) are not tracked as backlinks
+    let fixture = WikiTestFixture::new();
+    
+    fixture
+        .add_markdown_file("page1.md", "# Page 1\n\nThis links to [External](https://example.com/page.html) and [Protocol Relative](//cdn.example.com/file.html).")
+        .add_markdown_file("page2.md", "# Page 2\n\nThis links to [Internal](page1.md).");
+    
+    fixture.convert().expect("Conversion should succeed");
+    
+    // page1.html should have a backlink from page2.html
+    fixture.assert_output_contains("page1.html", "<hr>\n<h2>Linked from:</h2>\n<ul>\n<li><a href=\"page2.html\">page2</a></li>");
+    
+    // Verify that page1.html does NOT have any content suggesting external URLs were tracked
+    // (The external links should appear in the content but not in the backlinks section)
+    let page1_content = fixture.get_output("page1.html").unwrap();
+    
+    // External URLs should appear in the content (as links)
+    assert!(page1_content.contains("https://example.com/page.html"), "External URL should be present in content");
+    assert!(page1_content.contains("//cdn.example.com/file.html"), "Protocol-relative URL should be present in content");
+    
+    // But external URLs should NOT be tracked as pages receiving backlinks
+    // This means no backlinks section should appear mentioning these URLs
+}

@@ -83,7 +83,12 @@ impl Analyzer {
             } else {
                 &link
             };
-            if base_link.ends_with(".html") {
+            // Only track relative wiki links (no scheme or host)
+            // Skip URLs with schemes (http://, https://, ftp://, etc.)
+            // Skip protocol-relative URLs (//example.com/...)
+            let is_relative = !base_link.contains("://") && !base_link.starts_with("//");
+            
+            if is_relative && base_link.ends_with(".html") {
                 let backlink_list = self.backlinks
                     .entry(base_link.to_string())
                     .or_default();
