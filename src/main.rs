@@ -1,16 +1,16 @@
 mod analyzer;
 mod link_translator;
 mod html_aggregator;
+mod filesystem;
 
 use clap::Parser as ClapParser;
 use pulldown_cmark::{Options, Parser};
-use std::fs;
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
 
 use analyzer::Analyzer;
 use link_translator::translate_link;
 use html_aggregator::HtmlAggregator;
+use filesystem::{FileSystem, RealFileSystem};
 
 /// A minimal static wiki generator using markdown files as input
 #[derive(ClapParser, Debug)]
@@ -32,7 +32,8 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    match convert_wiki(&args.input_directory, &args.output_directory, args.search_index.as_deref()) {
+    let fs = RealFileSystem;
+    match convert_wiki(&fs, &args.input_directory, &args.output_directory, args.search_index.as_deref()) {
         Ok(_) => println!("Successfully converted markdown files to HTML"),
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -41,19 +42,19 @@ fn main() {
     }
 }
 
-fn convert_wiki(input_dir: &str, output_dir: &str, search_index_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+fn convert_wiki<FS: FileSystem>(fs: &FS, input_dir: &str, output_dir: &str, search_index_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     // Load header and footer
     let header_path = Path::new(input_dir).join("header.html");
     let footer_path = Path::new(input_dir).join("footer.html");
     
-    let header = if header_path.exists() {
-        fs::read_to_string(&header_path)?
+    let header = if fs.exists(&header_path) {
+        fs.read_to_string(&header_path)?
     } else {
         String::from("<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n<title>Wiki</title>\n</head>\n<body>\n")
     };
     
-    let footer = if footer_path.exists() {
-        fs::read_to_string(&footer_path)?
+    let footer = if fs.exists(&footer_path) {
+        fs.read_to_string(&footer_path)?
     } else {
         String::from("</body>\n</html>\n")
     };
@@ -62,14 +63,8 @@ fn convert_wiki(input_dir: &str, output_dir: &str, search_index_path: Option<&st
     let mut markdown_files: Vec<PathBuf> = Vec::new();
     let mut other_files: Vec<PathBuf> = Vec::new();
     
-    for entry in WalkDir::new(input_dir) {
-        let entry = entry?;
-        let path = entry.path();
-        
-        if !path.is_file() {
-            continue;
-        }
-        
+    let all_files = fs.walk_dir(Path::new(input_dir))?;
+    for path in all_files {
         // Skip header.html and footer.html as they are templates
         // Note: Files with non-UTF8 names won't be skipped even if they're actually
         // named header.html or footer.html, but this is an extremely rare edge case
@@ -80,21 +75,21 @@ fn convert_wiki(input_dir: &str, output_dir: &str, search_index_path: Option<&st
         }
         
         if path.extension().and_then(|s| s.to_str()) == Some("md") {
-            markdown_files.push(path.to_path_buf());
+            markdown_files.push(path);
         } else {
-            other_files.push(path.to_path_buf());
+            other_files.push(path);
         }
     }
 
     // Create output directory if it doesn't exist
-    fs::create_dir_all(output_dir)?;
+    fs.create_dir_all(Path::new(output_dir))?;
 
     // Create analyzer to track backlinks across all files
     let mut analyzer = Analyzer::new();
 
     // Convert each markdown file to HTML using streaming design
     for md_path in &markdown_files {
-        let content = fs::read_to_string(md_path)?;
+        let content = fs.read_to_string(md_path)?;
         
         let file_name = md_path
             .file_name()
@@ -157,10 +152,10 @@ fn convert_wiki(input_dir: &str, output_dir: &str, search_index_path: Option<&st
         
         // Create parent directory if needed
         if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent)?;
+            fs.create_dir_all(parent)?;
         }
         
-        fs::write(&output_path, final_html)?;
+        fs.write(&output_path, &final_html)?;
         
         println!("Created: {}", output_path.display());
     }
@@ -172,10 +167,10 @@ fn convert_wiki(input_dir: &str, output_dir: &str, search_index_path: Option<&st
         
         // Create parent directory if needed
         if let Some(parent) = dest_path.parent() {
-            fs::create_dir_all(parent)?;
+            fs.create_dir_all(parent)?;
         }
         
-        fs::copy(file_path, &dest_path)?;
+        fs.copy(file_path, &dest_path)?;
         println!("Copied: {}", dest_path.display());
     }
 
@@ -186,7 +181,7 @@ fn convert_wiki(input_dir: &str, output_dir: &str, search_index_path: Option<&st
         
         // Create search-data.js with embedded index
         let search_data_content = format!("window.SEARCH_INDEX_DATA = {};", index_json);
-        fs::write(index_path, search_data_content)?;
+        fs.write(Path::new(index_path), &search_data_content)?;
         println!("Created: {}", index_path);
     }
 
@@ -231,7 +226,7 @@ mod tests {
         .unwrap();
 
         // Convert
-        convert_wiki(
+        convert_wiki(&RealFileSystem, 
             input_dir.to_str().unwrap(),
             output_dir.to_str().unwrap(),
             None
@@ -278,7 +273,7 @@ mod tests {
         .unwrap();
 
         // Convert
-        convert_wiki(
+        convert_wiki(&RealFileSystem, 
             input_dir.to_str().unwrap(),
             output_dir.to_str().unwrap(),
             None
@@ -320,7 +315,7 @@ mod tests {
         .unwrap();
 
         // Convert
-        convert_wiki(
+        convert_wiki(&RealFileSystem, 
             input_dir.to_str().unwrap(),
             output_dir.to_str().unwrap(),
             None
@@ -367,7 +362,7 @@ mod tests {
         .unwrap();
 
         // Convert
-        convert_wiki(
+        convert_wiki(&RealFileSystem, 
             input_dir.to_str().unwrap(),
             output_dir.to_str().unwrap(),
             None
@@ -412,7 +407,7 @@ mod tests {
         .unwrap();
 
         // Convert
-        convert_wiki(
+        convert_wiki(&RealFileSystem, 
             input_dir.to_str().unwrap(),
             output_dir.to_str().unwrap(),
             None
@@ -457,7 +452,7 @@ mod tests {
 
         // Convert with search index
         let search_data_path = output_dir.join("search-data.js");
-        convert_wiki(
+        convert_wiki(&RealFileSystem, 
             input_dir.to_str().unwrap(),
             output_dir.to_str().unwrap(),
             Some(search_data_path.to_str().unwrap())
@@ -515,7 +510,7 @@ mod tests {
         .unwrap();
 
         // Convert without search index
-        convert_wiki(
+        convert_wiki(&RealFileSystem, 
             input_dir.to_str().unwrap(),
             output_dir.to_str().unwrap(),
             None
@@ -574,7 +569,7 @@ mod tests {
         .unwrap();
 
         // Convert
-        convert_wiki(
+        convert_wiki(&RealFileSystem, 
             input_dir.to_str().unwrap(),
             output_dir.to_str().unwrap(),
             None
@@ -625,7 +620,7 @@ mod tests {
         .unwrap();
 
         // Convert
-        convert_wiki(
+        convert_wiki(&RealFileSystem, 
             input_dir.to_str().unwrap(),
             output_dir.to_str().unwrap(),
             None
