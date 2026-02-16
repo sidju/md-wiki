@@ -120,12 +120,14 @@ impl FileSystem for MockFileSystem {
     }
     
     fn walk_dir(&self, base_path: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-        let paths: Vec<PathBuf> = self.files
+        let mut paths: Vec<PathBuf> = self.files
             .borrow()
             .keys()
             .filter(|path| path.starts_with(base_path))
             .cloned()
             .collect();
+        // Sort to ensure deterministic order (like WalkDir does)
+        paths.sort();
         Ok(paths)
     }
 }
