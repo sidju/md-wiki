@@ -2,6 +2,8 @@
 
 Effective note taking is essential for learning and knowledge management.
 
+Categories: #knowledge-management #learning
+
 ## Best Practices
 
 - Write in your own words

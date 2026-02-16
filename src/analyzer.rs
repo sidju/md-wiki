@@ -22,11 +22,13 @@ pub struct SearchIndex {
     pub documents: Vec<Document>,
 }
 
-/// Analyzer that tracks backlinks by analyzing markdown events
+/// Analyzer that tracks backlinks and categories by analyzing markdown events
 pub struct Analyzer {
-    /// Maps from target filename to a list of source filenames that link to it
+    /// Maps from target HTML filename to a list of source HTML filenames that link to it
     backlinks: HashMap<String, Vec<String>>,
-    /// Current source file being processed
+    /// Maps from category name to a list of HTML filenames that belong to that category
+    categories: HashMap<String, Vec<String>>,
+    /// Current source file being processed (HTML filename)
     current_file: String,
     /// Tracks headings for the current file
     current_headings: Vec<Heading>,
@@ -41,10 +43,11 @@ pub struct Analyzer {
 }
 
 impl Analyzer {
-    /// Create a new Analyzer for tracking backlinks
+    /// Create a new Analyzer for tracking backlinks and categories
     pub fn new() -> Self {
         Self {
             backlinks: HashMap::new(),
+            categories: HashMap::new(),
             current_file: String::new(),
             current_headings: Vec::new(),
             documents: Vec::new(),
@@ -69,26 +72,66 @@ impl Analyzer {
         self.current_headings.clear();
     }
 
-    /// Analyze an event, tracking backlinks, and return the event unchanged
+    /// Analyze an event, tracking backlinks and categories, and return the event unchanged
     pub fn analyze<'a>(&mut self, event: Event<'a>) -> Event<'a> {
-        // Track links for backlinks
+        // Track links for backlinks (already translated to .html by link_translator)
         if let Event::Start(Tag::Link { ref dest_url, .. }) = event {
             let link = dest_url.to_string();
-            // Handle links with or without fragments (e.g., "file.md" or "file.md#heading")
+            // Handle links with or without fragments (e.g., "file.html" or "file.html#heading")
             let base_link = if let Some(pos) = link.find('#') {
                 &link[..pos]
             } else {
                 &link
             };
-            if base_link.ends_with(".md") {
-                // Store just the filename part for backlinks
-                let filename = base_link.to_string();
+            if base_link.ends_with(".html") {
                 let backlink_list = self.backlinks
-                    .entry(filename)
+                    .entry(base_link.to_string())
                     .or_default();
                 // Only add if not already present (deduplicate)
                 if !backlink_list.contains(&self.current_file) {
                     backlink_list.push(self.current_file.clone());
+                }
+            }
+        }
+        
+        // Track categories (hashtags)
+        if let Event::Text(ref text) = event {
+            let text_str = text.as_ref();
+            
+            for (idx, _) in text_str.match_indices('#') {
+                // Check if # is at start or preceded by whitespace/punctuation
+                let valid_prefix = if idx == 0 {
+                    true
+                } else {
+                    // Find the character before # (respecting UTF-8 boundaries)
+                    let mut prev_idx = idx - 1;
+                    while prev_idx > 0 && !text_str.is_char_boundary(prev_idx) {
+                        prev_idx -= 1;
+                    }
+                    if let Some(prev_char) = text_str[prev_idx..idx].chars().next() {
+                        prev_char.is_whitespace() || matches!(prev_char, '(' | '[' | '{')
+                    } else {
+                        false
+                    }
+                };
+                
+                if valid_prefix {
+                    // Extract category name after #
+                    let after_hash = &text_str[idx + 1..];
+                    let category_end = after_hash
+                        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
+                        .unwrap_or(after_hash.len());
+                    
+                    let category = &after_hash[..category_end];
+                    
+                    if !category.is_empty() {
+                        let category_list = self.categories
+                            .entry(category.to_string())
+                            .or_default();
+                        if !category_list.contains(&self.current_file) {
+                            category_list.push(self.current_file.clone());
+                        }
+                    }
                 }
             }
         }
@@ -131,6 +174,11 @@ impl Analyzer {
     /// Get the backlinks map
     pub fn get_backlinks(&self) -> &HashMap<String, Vec<String>> {
         &self.backlinks
+    }
+    
+    /// Get the categories map
+    pub fn get_categories(&self) -> &HashMap<String, Vec<String>> {
+        &self.categories
     }
     
     /// Finalize analysis and return search index
