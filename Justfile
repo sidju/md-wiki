@@ -13,4 +13,4 @@ example: build
 # Clean build artifacts and output
 clean:
     cargo clean
-    rm -r output
+    rm -rf output
