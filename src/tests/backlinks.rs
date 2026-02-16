@@ -11,9 +11,8 @@ fn test_backlinks() {
     
     fixture.convert().expect("Conversion should succeed");
     
-    // Check that page2.html has a backlink to page1
-    fixture.assert_output_contains("page2.html", "Linked from:");
-    fixture.assert_output_contains("page2.html", "page1.html");
+    // Check that page2.html has a backlink to page1, verifying both presence and ordering
+    fixture.assert_output_contains("page2.html", "<hr>\n<h2>Linked from:</h2>\n<ul>\n<li><a href=\"page1.html\">page1</a></li>");
 }
 
 #[test]
@@ -27,11 +26,14 @@ fn test_deduplicated_backlinks() {
     fixture.convert().expect("Conversion should succeed");
     
     // Check that page2.html has a backlink to page1 only once
-    fixture.assert_output_contains("page2.html", "Linked from:");
+    let page2_content = fixture.get_output("page2.html").unwrap();
     
     // Count occurrences of page1.html in the output
-    let count = fixture.count_in_output("page2.html", "page1.html");
+    let count = page2_content.matches("page1.html").count();
     assert_eq!(count, 1, "page1 should appear exactly once in backlinks, but appeared {} times", count);
+    
+    // Also verify the backlinks section structure
+    fixture.assert_output_contains("page2.html", "<hr>\n<h2>Linked from:</h2>\n<ul>\n<li><a href=\"page1.html\">page1</a></li>");
 }
 
 #[test]
@@ -47,7 +49,6 @@ fn test_backlinks_order_independent() {
     fixture.convert().expect("Conversion should succeed");
     
     // Even though zzz.md might be processed after aaa.md (depending on HashMap order),
-    // aaa.html should still have the backlink to zzz
-    fixture.assert_output_contains("aaa.html", "Linked from:");
-    fixture.assert_output_contains("aaa.html", "zzz.html");
+    // aaa.html should still have the backlink to zzz, and verify structure
+    fixture.assert_output_contains("aaa.html", "<hr>\n<h2>Linked from:</h2>\n<ul>\n<li><a href=\"zzz.html\">zzz</a></li>");
 }

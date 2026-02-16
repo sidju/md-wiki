@@ -11,17 +11,14 @@ fn test_heading_anchors() {
     
     fixture.convert().expect("Conversion should succeed");
     
-    // Check that headings have IDs
-    fixture.assert_output_contains("page1.html", r#"id="main-heading""#);
-    fixture.assert_output_contains("page1.html", r#"id="sub-heading""#);
+    // Check that headings have IDs and links work in correct order
+    let page1_expected = r###"<h1 id="main-heading">Main Heading</h1>
+<p>Link to <a href="#sub-heading">section</a>.</p>
+<h2 id="sub-heading">Sub Heading</h2>
+<p>Link to <a href="page2.html#another-heading">other page</a>.</p>"###;
     
-    // Check that internal anchor links work
-    fixture.assert_output_contains("page1.html", r##"href="#sub-heading""##);
-    
-    // Check that cross-file anchor links work
-    fixture.assert_output_contains("page1.html", r##"href="page2.html#another-heading""##);
-    
-    fixture.assert_output_contains("page2.html", r#"id="another-heading""#);
+    fixture.assert_output_contains("page1.html", page1_expected);
+    fixture.assert_output_contains("page2.html", r###"<h1 id="another-heading">Another Heading</h1>"###);
 }
 
 #[test]
@@ -32,16 +29,14 @@ fn test_custom_heading_ids() {
     
     fixture.convert().expect("Conversion should succeed");
     
-    // Check that headings have correct IDs
+    // Check that headings have correct IDs in order
     let content = fixture.get_output("custom.html").unwrap();
     
-    // Auto-generated ID from text
-    assert!(content.contains(r#"id="auto-generated""#), "Should have auto-generated ID");
-    
-    // Custom IDs from markdown
-    assert!(content.contains(r#"id="my-custom-id""#), "Should have custom ID");
-    assert!(content.contains(r#"id="also-custom""#), "Should have custom ID for h2");
+    // Verify all IDs are present
+    assert!(content.contains(r###"id="auto-generated""###), "Should have auto-generated ID");
+    assert!(content.contains(r###"id="my-custom-id""###), "Should have custom ID");
+    assert!(content.contains(r###"id="also-custom""###), "Should have custom ID for h2");
     
     // Should NOT have auto-generated IDs for headings with custom IDs
-    assert!(!content.contains(r#"id="custom-id""#), "Should not auto-generate when custom ID exists");
+    assert!(!content.contains(r###"id="custom-id""###), "Should not auto-generate when custom ID exists");
 }
