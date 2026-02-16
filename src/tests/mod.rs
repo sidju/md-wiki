@@ -1,5 +1,11 @@
-use md_wiki::filesystem::{FileSystem, MockFileSystem};
-use std::path::{Path, PathBuf};
+use crate::filesystem::MockFileSystem;
+use std::path::PathBuf;
+
+pub mod conversion;
+pub mod backlinks;
+pub mod files;
+pub mod search;
+pub mod headings;
 
 /// Test fixture for setting up a mock filesystem with common test data
 pub struct WikiTestFixture {
@@ -48,7 +54,7 @@ impl WikiTestFixture {
 
     /// Run the wiki conversion
     pub fn convert(&self) -> Result<(), Box<dyn std::error::Error>> {
-        md_wiki::convert_wiki(
+        crate::convert_wiki(
             &self.fs,
             self.input_dir.to_str().unwrap(),
             self.output_dir.to_str().unwrap(),
@@ -58,7 +64,7 @@ impl WikiTestFixture {
 
     /// Run the wiki conversion with search index
     pub fn convert_with_search(&self, search_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        md_wiki::convert_wiki(
+        crate::convert_wiki(
             &self.fs,
             self.input_dir.to_str().unwrap(),
             self.output_dir.to_str().unwrap(),

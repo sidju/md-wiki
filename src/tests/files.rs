@@ -1,5 +1,5 @@
-mod common;
-use common::WikiTestFixture;
+use super::WikiTestFixture;
+
 
 #[test]
 fn test_copy_non_md_files() {
