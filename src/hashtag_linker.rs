@@ -32,11 +32,6 @@ pub fn linkify_hashtags<'a>(event: Event<'a>) -> Vec<Event<'a>> {
                 last_end = hashtag_end;
             });
             
-            // No hashtags found, return original event
-            if events.is_empty() {
-                return vec![Event::Text(text)];
-            }
-            
             // Add any remaining text after the last hashtag
             if last_end < text_str.len() {
                 events.push(Event::Text(CowStr::from(text_str[last_end..].to_string())));
