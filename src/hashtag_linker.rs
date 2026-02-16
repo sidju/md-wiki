@@ -9,11 +9,8 @@ pub fn linkify_hashtags<'a>(event: Event<'a>) -> Vec<Event<'a>> {
             let text_str = text.as_ref();
             let mut events = Vec::new();
             let mut last_end = 0;
-            let mut found_hashtag = false;
             
             hashtag_parser::parse_hashtags(text_str, |idx, hashtag_end, category| {
-                found_hashtag = true;
-                
                 // Add text before the hashtag if any
                 if idx > last_end {
                     events.push(Event::Text(CowStr::from(text_str[last_end..idx].to_string())));
@@ -35,16 +32,17 @@ pub fn linkify_hashtags<'a>(event: Event<'a>) -> Vec<Event<'a>> {
                 last_end = hashtag_end;
             });
             
-            // If we found hashtags, add any remaining text
-            if found_hashtag {
-                if last_end < text_str.len() {
-                    events.push(Event::Text(CowStr::from(text_str[last_end..].to_string())));
-                }
-                events
-            } else {
-                // No hashtags found, return original event
-                vec![Event::Text(text)]
+            // No hashtags found, return original event
+            if events.is_empty() {
+                return vec![Event::Text(text)];
             }
+            
+            // Add any remaining text after the last hashtag
+            if last_end < text_str.len() {
+                events.push(Event::Text(CowStr::from(text_str[last_end..].to_string())));
+            }
+            
+            events
         }
         // For all other events, just pass through as-is
         other => vec![other],
