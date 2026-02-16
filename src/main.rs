@@ -111,15 +111,14 @@ fn convert_wiki<FS: FileSystem>(
     for md_path in &markdown_files {
         let content = fs.read_to_string(md_path)?;
         
-        // Since all markdown files are in root, we can use just the filename
-        let file_name = md_path
+        // Set current file in analyzer (using HTML filename)
+        // Use PathBuf's with_extension to safely change extension
+        let html_filename = md_path
+            .with_extension("html")
             .file_name()
             .and_then(|s| s.to_str())
             .ok_or("Non-UTF8 filename")?
             .to_string();
-        
-        // Set current file in analyzer (using HTML filename)
-        let html_filename = file_name.replace(".md", ".html");
         analyzer.set_current_file(html_filename.clone());
         
         // Parse markdown with options

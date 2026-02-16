@@ -1,5 +1,5 @@
 use pulldown_cmark::{Event, Tag};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet};
 use serde::{Serialize, Deserialize};
 
 /// Represents a heading in a document
@@ -24,10 +24,10 @@ pub struct SearchIndex {
 
 /// Analyzer that tracks backlinks and categories by analyzing markdown events
 pub struct Analyzer {
-    /// Maps from target HTML filename to a list of source HTML filenames that link to it
-    backlinks: HashMap<String, Vec<String>>,
-    /// Maps from category name to a list of HTML filenames that belong to that category
-    categories: HashMap<String, Vec<String>>,
+    /// Maps from target HTML filename to a set of source HTML filenames that link to it
+    backlinks: BTreeMap<String, BTreeSet<String>>,
+    /// Maps from category name to a set of HTML filenames that belong to that category
+    categories: BTreeMap<String, BTreeSet<String>>,
     /// Current source file being processed (HTML filename)
     current_file: String,
     /// Tracks headings for the current file
@@ -46,8 +46,8 @@ impl Analyzer {
     /// Create a new Analyzer for tracking backlinks and categories
     pub fn new() -> Self {
         Self {
-            backlinks: HashMap::new(),
-            categories: HashMap::new(),
+            backlinks: BTreeMap::new(),
+            categories: BTreeMap::new(),
             current_file: String::new(),
             current_headings: Vec::new(),
             documents: Vec::new(),
@@ -91,13 +91,10 @@ impl Analyzer {
             let is_relative = !base_link.contains("://") && !base_link.starts_with("//");
             
             if is_relative && base_link.ends_with(".html") {
-                let backlink_list = self.backlinks
+                self.backlinks
                     .entry(base_link.to_string())
-                    .or_default();
-                // Only add if not already present (deduplicate)
-                if !backlink_list.contains(&self.current_file) {
-                    backlink_list.push(self.current_file.clone());
-                }
+                    .or_default()
+                    .insert(self.current_file.clone());
             }
         }
         
@@ -132,12 +129,10 @@ impl Analyzer {
                     let category = &after_hash[..category_end];
                     
                     if !category.is_empty() {
-                        let category_list = self.categories
+                        self.categories
                             .entry(category.to_string())
-                            .or_default();
-                        if !category_list.contains(&self.current_file) {
-                            category_list.push(self.current_file.clone());
-                        }
+                            .or_default()
+                            .insert(self.current_file.clone());
                     }
                 }
             }
@@ -179,12 +174,12 @@ impl Analyzer {
     }
 
     /// Get the backlinks map
-    pub fn get_backlinks(&self) -> &HashMap<String, Vec<String>> {
+    pub fn get_backlinks(&self) -> &BTreeMap<String, BTreeSet<String>> {
         &self.backlinks
     }
     
     /// Get the categories map
-    pub fn get_categories(&self) -> &HashMap<String, Vec<String>> {
+    pub fn get_categories(&self) -> &BTreeMap<String, BTreeSet<String>> {
         &self.categories
     }
     

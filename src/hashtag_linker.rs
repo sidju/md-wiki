@@ -11,7 +11,7 @@ pub fn linkify_hashtags<'a>(event: Event<'a>) -> Vec<Event<'a>> {
             let mut found_hashtag = false;
             
             for (idx, _) in text_str.match_indices('#') {
-                // Check if # is at start or preceded by whitespace/punctuation
+                // Check if # is at start or preceded by whitespace or opening bracket/parenthesis
                 let valid_prefix = if idx == 0 {
                     true
                 } else {
