@@ -1,6 +1,5 @@
 use super::WikiTestFixture;
 
-
 #[test]
 fn test_hashtag_linkification() {
     let fixture = WikiTestFixture::new();

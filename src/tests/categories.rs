@@ -1,6 +1,5 @@
 use super::WikiTestFixture;
 
-
 #[test]
 fn test_category_page_auto_generation() {
     let fixture = WikiTestFixture::new();
