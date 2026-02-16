@@ -65,12 +65,12 @@ impl WikiTestFixture {
     }
 
     /// Run the wiki conversion with search index
-    pub fn convert_with_search(&self, search_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn convert_with_search(&self, index_filename: &str) -> Result<(), Box<dyn std::error::Error>> {
         crate::convert_wiki(
             &self.fs,
             self.input_dir.to_str().unwrap(),
             self.output_dir.to_str().unwrap(),
-            Some(search_path),
+            Some(index_filename),
         )
     }
 

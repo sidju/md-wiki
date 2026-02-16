@@ -1,137 +1,83 @@
 # md-wiki
 
-A minimal static wiki generator using markdown files as input. Strives to work as a Zettelkästen viewer with automatic backlink generation.
+A minimal wiki over zettelkästen inspired markdown notes.
 
-## Features
+- Renders a flat directory of markdown files into a static wiki.
+- Provides rudimentary HTML templating for flexibility.
+- Supports assets, includes any non-source files in the output as-is.
+- Supports basic wiki-style search.
+- Statically tracks backlinks: all pages linking to a page are listed under a
+  "Linked from" section added to that page.
+- Generates category pages: pages tagged with `#categories` are automatically
+  collected into category index pages.
 
-- 📝 Converts markdown files to HTML with proper formatting
-- 🔗 Automatic backlink detection - shows which pages link to each page
-- 🎨 Customizable header and footer templates
-- ⚡ Fast and lightweight Rust implementation
-- 🗂️ Preserves directory structure
 
-## Installation
+## Non-Goals
 
-### Building from source
+- Supporting non-standard syntaxes, the source for your wiki should be easy to
+  view and edit in any markdown editor/viewer.
+  - [[Wikilinks]] are a particular peeve, since they are fully redundant with
+    normal markdown links and also require a page index to open...
+- Supporting hierarchical markdown files, zettelkasten and wikis alike are
+  flat as a concept and gain nothing from a hierarchy. (But if you really want
+  to you can make a PR so the code handles hierarchical sources, I just don't
+  care for it.)
 
-```bash
-cargo build --release
-```
-
-The binary will be available at `target/release/md-wiki`.
 
 ## Usage
 
-```bash
-md-wiki [OPTIONS] <INPUT_DIRECTORY> [OUTPUT_DIRECTORY]
-```
+For any degree of regular usage you will want to install it.
 
-- `INPUT_DIRECTORY`: Directory containing your markdown files
-- `OUTPUT_DIRECTORY`: Where HTML files will be created (optional, defaults to current directory)
-- `--search-index <PATH>`: Optional path where search index will be written
+From crates:
+`cargo install md-wiki`
 
-### Examples
+From repo:
+`cargo install --path .`
 
-```bash
-# Convert markdown files in 'wiki' directory to HTML in 'output' directory
-md-wiki wiki output
+After that `md-wiki` should be available in your path (assuming you've added
+`$HOME/.cargo/bin` to your path). Run `md-wiki --help` for full usage
+instructions.
 
-# Generate with search index for search functionality
-md-wiki wiki output --search-index output/search-data.js
-
-# Using example files
-md-wiki example example/output
-```
-
-## Directory Structure
-
-Your input directory can contain:
-
-- **Markdown files** (`.md`): Your wiki content - will be converted to HTML
-  - **Important**: Markdown files must be in the source directory root (not in subdirectories)
-  - Markdown files in subdirectories will be copied as-is without processing (with a warning)
-- **Other files** (CSS, JS, images, etc.): Will be copied as-is to the output directory
-  - Can be organized in subdirectories
-- **header.html** (optional): HTML to prepend to each page
-- **footer.html** (optional): HTML to append to each page
-
-All files (except `header.html` and `footer.html`) will be copied to the output directory, maintaining the same directory structure. Markdown files in the root directory will be converted to HTML with the `.html` extension.
-
-If `header.html` or `footer.html` are not provided, default minimal HTML will be used.
-
-### Example Structure
-
-```
-wiki/
-├── header.html          # Optional template
-├── footer.html          # Optional template
-├── index.md            # ✓ Converted to index.html
-├── notes.md            # ✓ Converted to notes.html
-├── zettelkasten.md     # ✓ Converted to zettelkasten.html
-├── style.css           # Copied as-is
-└── assets/
-    ├── search.js       # Copied as-is
-    ├── notes.md        # ⚠ Warning: copied as-is (not in root)
-    └── images/
-        └── logo.png    # Copied as-is
-```
-
-## How it Works
-
-1. **Scans** all files in the input directory recursively
-2. **Analyzes** markdown files in the root directory to build a backlink graph
-3. **Converts** each root-level markdown file to HTML
-4. **Copies** all other files to output (preserving directory structure)
-5. **Combines** header + content + backlinks + footer for each HTML page
-6. **Optionally generates** search index if `--search-index` flag is provided
-
-## Backlinks
-
-When you link to other markdown files using `[Link Text](filename.md)`, md-wiki will:
-
-- Convert the link to point to the HTML version: `filename.html`
-- Add a "Linked from" section at the bottom of `filename.html` showing all pages that link to it
-
-This creates a bidirectional link structure, perfect for Zettelkästen-style note-taking.
-
-## Example
-
-See the `example/` directory for a sample wiki with header, footer, and interconnected pages.
-
-To generate the example:
+### Example
 
 ```bash
-cargo build
-./target/debug/md-wiki example example/output
+md-wiki example example/output --index-filename search-data.js
 ```
 
 Then open `example/output/index.html` in your browser.
 
-## Search Functionality
+### Wiki source directory structure
 
-md-wiki can optionally generate a search index when converting markdown files:
+Here follows the files taken as input:
+- `*.md`, processed into html files in the output dir.
+  (Note that only markdown files directly in the source dir are processed)
+- `header.html`, prepended to the generated html for each markdown file.
+  Expected to open the `<html>` and `<body>` tags, should containt `<head>`.
+- `footer.html`, appended to the generated html for each markdown file.
+  Expected to close the `<body>` and `<html>` tags.
+- `**/*`, all other files and directories are assumed to be assets and copied
+  over as-is.
 
-```bash
-# Generate wiki with search index
-md-wiki example example/output --search-index example/output/search-data.js
-```
+A wiki source directory isn't required to contain anything, but you should
+add at least a markdown file for this CLI tool to be meaningful to use.
 
-This creates a JavaScript file that embeds the search index as `window.SEARCH_INDEX_DATA` (global variable).
+### Search index
 
-To enable search in your wiki, include this file in your header template:
+`md-wiki` can generate a search index for the markdown files it converts. That
+index simply maps filenames to the headings that exist within them, not much but
+enough for a basic wiki-style search. Use the `--index-filename <filename>` flag
+to create a javascript file in the output directory that writes the index to
+`window.SEARCH_INDEX_DATA` (javascript because a fetch for a json file errors on
+local html files).
 
-```html
-<script src="search-data.js"></script>
-```
+Note the `search.js` file in the examples dir that utilizes this index for a
+basic search bar.
 
-And include the search UI components. The example's `resources/search.js` provides a reference implementation.
 
-**Note:** If you don't need search functionality, simply omit the `--search-index` flag and no search index will be generated.
+## Contributing
 
-The search functionality works both when opening HTML files directly from your filesystem (`file://` protocol) and when serving files via a web server (`http://` protocol).
+If this is close but not quite what you need, feel free to open a PR.
 
 ## License
 
 MIT License - see LICENSE file for details.
-
-

@@ -68,7 +68,7 @@ impl Analyzer {
                 headings: self.current_headings.clone(),
             });
         }
-        
+
         self.current_file = filename;
         self.current_headings.clear();
     }
@@ -90,7 +90,7 @@ impl Analyzer {
             // This allows relative paths (page.html, ./page.html, ../page.html)
             // and absolute wiki paths (/page.html) while filtering external URLs
             let is_relative = !base_link.contains("://") && !base_link.starts_with("//");
-            
+
             if is_relative && base_link.ends_with(".html") {
                 self.backlinks
                     .entry(base_link.to_string())
@@ -98,11 +98,11 @@ impl Analyzer {
                     .insert(self.current_file.clone());
             }
         }
-        
+
         // Track categories (hashtags)
         if let Event::Text(ref text) = event {
             let text_str = text.as_ref();
-            
+
             hashtag_parser::parse_hashtags(text_str, |_start, _end, category| {
                 self.categories
                     .entry(category.to_string())
@@ -110,7 +110,7 @@ impl Analyzer {
                     .insert(self.current_file.clone());
             });
         }
-        
+
         // Track headings
         match &event {
             Event::Start(Tag::Heading { id, .. }) => {
@@ -126,12 +126,12 @@ impl Analyzer {
                         // Slugify the heading text
                         slugify(&self.current_heading_text)
                     };
-                    
+
                     self.current_headings.push(Heading {
                         text: self.current_heading_text.clone(),
                         id: heading_id,
                     });
-                    
+
                     self.in_heading = false;
                     self.current_heading_text.clear();
                     self.current_heading_id = None;
@@ -142,7 +142,7 @@ impl Analyzer {
             }
             _ => {}
         }
-        
+
         event
     }
 
@@ -150,12 +150,12 @@ impl Analyzer {
     pub fn get_backlinks(&self) -> &BTreeMap<String, BTreeSet<String>> {
         &self.backlinks
     }
-    
+
     /// Get the categories map
     pub fn get_categories(&self) -> &BTreeMap<String, BTreeSet<String>> {
         &self.categories
     }
-    
+
     /// Finalize analysis and return search index
     pub fn finalize(mut self) -> SearchIndex {
         // Add the last file's headings
@@ -166,7 +166,7 @@ impl Analyzer {
                 headings: self.current_headings,
             });
         }
-        
+
         SearchIndex {
             documents: self.documents,
         }

@@ -27,16 +27,16 @@ struct Args {
     #[arg(default_value = ".")]
     output_directory: String,
 
-    /// Optional path where search index will be written
-    #[arg(long = "search-index")]
-    search_index: Option<String>,
+    /// Optional filename for search index (written to output directory)
+    #[arg(long = "index-filename")]
+    index_filename: Option<String>,
 }
 
 fn main() {
     let args = Args::parse();
 
     let fs = RealFileSystem;
-    match convert_wiki(&fs, &args.input_directory, &args.output_directory, args.search_index.as_deref()) {
+    match convert_wiki(&fs, &args.input_directory, &args.output_directory, args.index_filename.as_deref()) {
         Ok(_) => println!("Successfully converted markdown files to HTML"),
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -50,18 +50,18 @@ fn convert_wiki<FS: FileSystem>(
     fs: &FS,
     input_dir: &str,
     output_dir: &str,
-    search_index_path: Option<&str>,
+    index_filename: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Load header and footer
     let header_path = Path::new(input_dir).join("header.html");
     let footer_path = Path::new(input_dir).join("footer.html");
-    
+
     let header = if fs.exists(&header_path) {
         fs.read_to_string(&header_path)?
     } else {
         String::from("<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n<title>Wiki</title>\n</head>\n<body>\n")
     };
-    
+
     let footer = if fs.exists(&footer_path) {
         fs.read_to_string(&footer_path)?
     } else {
@@ -71,7 +71,7 @@ fn convert_wiki<FS: FileSystem>(
     // Find all files and separate them into markdown and other files
     let mut markdown_files: Vec<PathBuf> = Vec::new();
     let mut other_files: Vec<PathBuf> = Vec::new();
-    
+
     let all_files = fs.walk_dir(Path::new(input_dir))?;
     for path in all_files {
         // Skip header.html and footer.html as they are templates
@@ -82,7 +82,7 @@ fn convert_wiki<FS: FileSystem>(
         if file_name == "header.html" || file_name == "footer.html" {
             continue;
         }
-        
+
         if path.extension().and_then(|s| s.to_str()) == Some("md") {
             // Check if markdown file is in a subdirectory
             let relative_path = path.strip_prefix(input_dir)?;
@@ -108,10 +108,10 @@ fn convert_wiki<FS: FileSystem>(
 
     // FIRST PASS: Analyze all markdown files and generate HTML (but don't write yet)
     let mut generated_html: Vec<(PathBuf, String, String)> = Vec::new();
-    
+
     for md_path in &markdown_files {
         let content = fs.read_to_string(md_path)?;
-        
+
         // Set current file in analyzer (using HTML filename)
         // Use PathBuf's with_extension to safely change extension
         let html_filename = md_path
@@ -121,14 +121,14 @@ fn convert_wiki<FS: FileSystem>(
             .ok_or("Non-UTF8 filename")?
             .to_string();
         analyzer.set_current_file(html_filename.clone());
-        
+
         // Parse markdown with options
         let mut options = Options::empty();
         options.insert(Options::ENABLE_STRIKETHROUGH);
         options.insert(Options::ENABLE_TABLES);
         options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
         let parser = Parser::new_ext(&content, options);
-        
+
         // Stream events through the processing pipeline:
         // 1. Translate links (.md -> .html)
         // 2. Analyze (track backlinks, categories, and headings) - must see original hashtags
@@ -142,17 +142,17 @@ fn convert_wiki<FS: FileSystem>(
                 .fold(HtmlAggregator::new(), |aggregator, event| {
                     aggregator.ingest(event)
                 });
-            
+
             aggregator.to_html_string()
         };
-        
+
         // Store the generated HTML and HTML filename for second pass
         generated_html.push((md_path.clone(), html_filename, html_content));
     }
 
     // SECOND PASS: Add backlinks and write files (now all backlinks are complete)
     let mut existing_pages = std::collections::HashSet::new();
-    
+
     for (md_path, html_file_name, html_content) in generated_html {
         // Build category pages list if this page is a category
         let mut category_pages_html = String::new();
@@ -170,7 +170,7 @@ fn convert_wiki<FS: FileSystem>(
                 category_pages_html.push_str("</ul>\n");
             }
         }
-        
+
         // Build backlinks section (now all backlinks are available)
         let mut backlinks_html = String::new();
         if let Some(links) = analyzer.get_backlinks().get(&html_file_name)
@@ -197,30 +197,30 @@ fn convert_wiki<FS: FileSystem>(
         // Calculate the relative path from input_dir to preserve directory structure
         let relative_path = md_path.strip_prefix(input_dir)?;
         let output_path = Path::new(output_dir).join(relative_path).with_extension("html");
-        
+
         // Create parent directory if needed
         if let Some(parent) = output_path.parent() {
             fs.create_dir_all(parent)?;
         }
-        
+
         fs.write(&output_path, &final_html)?;
-        
+
         // Track this page as existing
         existing_pages.insert(html_file_name);
-        
+
         println!("Created: {}", output_path.display());
     }
 
     // THIRD PASS: Create category pages that don't already exist
     for (category_name, pages) in analyzer.get_categories() {
         let category_html_name = format!("{}.html", category_name);
-        
+
         // Only create if this category page doesn't exist
         if !existing_pages.contains(&category_html_name) && !pages.is_empty() {
             // Build category page content
             let mut category_content = String::new();
             category_content.push_str(&format!("<h1>{}</h1>\n", category_name));
-            
+
             // Add pages in this category
             category_content.push_str("<hr>\n<h2>Pages in this category:</h2>\n<ul>\n");
             for page in pages {
@@ -231,7 +231,7 @@ fn convert_wiki<FS: FileSystem>(
                 ));
             }
             category_content.push_str("</ul>\n");
-            
+
             // Add backlinks section if any
             let mut backlinks_html = String::new();
             if let Some(links) = analyzer.get_backlinks().get(&category_html_name) {
@@ -247,14 +247,14 @@ fn convert_wiki<FS: FileSystem>(
                     backlinks_html.push_str("</ul>\n");
                 }
             }
-            
+
             // Combine header, content, backlinks, and footer
             let mut final_html = String::new();
             final_html.push_str(&header);
             final_html.push_str(&category_content);
             final_html.push_str(&backlinks_html);
             final_html.push_str(&footer);
-            
+
             // Write the category page
             let output_path = Path::new(output_dir).join(&category_html_name);
             fs.write(&output_path, &final_html)?;
@@ -266,25 +266,26 @@ fn convert_wiki<FS: FileSystem>(
     for file_path in &other_files {
         let relative_path = file_path.strip_prefix(input_dir)?;
         let dest_path = Path::new(output_dir).join(relative_path);
-        
+
         // Create parent directory if needed
         if let Some(parent) = dest_path.parent() {
             fs.create_dir_all(parent)?;
         }
-        
+
         fs.copy(file_path, &dest_path)?;
         println!("Copied: {}", dest_path.display());
     }
 
-    // Optionally generate search index if path is provided
-    if let Some(index_path) = search_index_path {
+    // Optionally generate search index if filename is provided
+    if let Some(filename) = index_filename {
         let search_index = analyzer.finalize();
         let index_json = serde_json::to_string_pretty(&search_index)?;
-        
-        // Create search-data.js with embedded index
+
+        // Create search index file in output directory
         let search_data_content = format!("window.SEARCH_INDEX_DATA = {};", index_json);
-        fs.write(Path::new(index_path), &search_data_content)?;
-        println!("Created: {}", index_path);
+        let index_path = Path::new(output_dir).join(filename);
+        fs.write(&index_path, &search_data_content)?;
+        println!("Created: {}", index_path.display());
     }
 
     Ok(())

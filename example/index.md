@@ -1,18 +1,16 @@
-# Welcome to My Wiki
+# md-wiki Design Philosophy
 
-This is a simple wiki built with md-wiki, a static site generator for markdown files.
+#design #zettelkasten
 
-## Features
+This wiki explains the design choices behind md-wiki and why it uses standard markdown over extended syntaxes.
 
-- Converts markdown to HTML
-- Automatic backlinks (shows which pages link to this page)
-- Simple and fast
+## Core Principle
 
-## Example Pages
+A zettelkasten should be **application agnostic**. Your notes should outlive any particular tool, remaining readable and navigable without specialized software.
 
-- [Zettelkasten Method](zettelkasten.md)
-- [Note Taking](notes.md)
+## Key Topics
 
-## Getting Started
-
-Just write your content in markdown and run md-wiki to convert everything to HTML!
+- [Markdown Links](markdown-links.md) - Why standard markdown links over wikilinks
+- [Hashtag Categories](hashtag-categories.md) - Why hashtags for categories
+- [Tooling Philosophy](tooling-philosophy.md) - Choosing tools for zettelkasten management
+- [Flat Structure](flat-structure.md) - Why hierarchies don't belong in zettelkasten
