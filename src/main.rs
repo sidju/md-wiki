@@ -1,6 +1,7 @@
 mod analyzer;
 mod link_translator;
 mod hashtag_linker;
+mod hashtag_parser;
 mod html_aggregator;
 pub mod filesystem;
 
