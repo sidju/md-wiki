@@ -48,11 +48,14 @@ md-wiki example example/output
 Your input directory can contain:
 
 - **Markdown files** (`.md`): Your wiki content - will be converted to HTML
+  - **Important**: Markdown files must be in the source directory root (not in subdirectories)
+  - Markdown files in subdirectories will be copied as-is without processing (with a warning)
 - **Other files** (CSS, JS, images, etc.): Will be copied as-is to the output directory
+  - Can be organized in subdirectories
 - **header.html** (optional): HTML to prepend to each page
 - **footer.html** (optional): HTML to append to each page
 
-All files (except `header.html` and `footer.html`) will be copied to the output directory, maintaining the same directory structure. Markdown files will be converted to HTML with the `.html` extension.
+All files (except `header.html` and `footer.html`) will be copied to the output directory, maintaining the same directory structure. Markdown files in the root directory will be converted to HTML with the `.html` extension.
 
 If `header.html` or `footer.html` are not provided, default minimal HTML will be used.
 
@@ -62,12 +65,13 @@ If `header.html` or `footer.html` are not provided, default minimal HTML will be
 wiki/
 ├── header.html          # Optional template
 ├── footer.html          # Optional template
-├── index.md            # Converted to index.html
-├── notes.md            # Converted to notes.html
-├── zettelkasten.md     # Converted to zettelkasten.html
+├── index.md            # ✓ Converted to index.html
+├── notes.md            # ✓ Converted to notes.html
+├── zettelkasten.md     # ✓ Converted to zettelkasten.html
 ├── style.css           # Copied as-is
 └── assets/
     ├── search.js       # Copied as-is
+    ├── notes.md        # ⚠ Warning: copied as-is (not in root)
     └── images/
         └── logo.png    # Copied as-is
 ```
@@ -75,9 +79,9 @@ wiki/
 ## How it Works
 
 1. **Scans** all files in the input directory recursively
-2. **Analyzes** markdown files to build a backlink graph
-3. **Converts** each markdown file to HTML (preserving directory structure)
-4. **Copies** all non-.md files to output (preserving directory structure)
+2. **Analyzes** markdown files in the root directory to build a backlink graph
+3. **Converts** each root-level markdown file to HTML
+4. **Copies** all other files to output (preserving directory structure)
 5. **Combines** header + content + backlinks + footer for each HTML page
 6. **Optionally generates** search index if `--search-index` flag is provided
 
