@@ -1,6 +1,7 @@
 use pulldown_cmark::{Event, Tag};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet};
 use serde::{Serialize, Deserialize};
+use crate::hashtag_parser;
 
 /// Represents a heading in a document
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,11 +23,13 @@ pub struct SearchIndex {
     pub documents: Vec<Document>,
 }
 
-/// Analyzer that tracks backlinks by analyzing markdown events
+/// Analyzer that tracks backlinks and categories by analyzing markdown events
 pub struct Analyzer {
-    /// Maps from target filename to a list of source filenames that link to it
-    backlinks: HashMap<String, Vec<String>>,
-    /// Current source file being processed
+    /// Maps from target HTML filename to a set of source HTML filenames that link to it
+    backlinks: BTreeMap<String, BTreeSet<String>>,
+    /// Maps from category name to a set of HTML filenames that belong to that category
+    categories: BTreeMap<String, BTreeSet<String>>,
+    /// Current source file being processed (HTML filename)
     current_file: String,
     /// Tracks headings for the current file
     current_headings: Vec<Heading>,
@@ -41,10 +44,11 @@ pub struct Analyzer {
 }
 
 impl Analyzer {
-    /// Create a new Analyzer for tracking backlinks
+    /// Create a new Analyzer for tracking backlinks and categories
     pub fn new() -> Self {
         Self {
-            backlinks: HashMap::new(),
+            backlinks: BTreeMap::new(),
+            categories: BTreeMap::new(),
             current_file: String::new(),
             current_headings: Vec::new(),
             documents: Vec::new(),
@@ -69,28 +73,42 @@ impl Analyzer {
         self.current_headings.clear();
     }
 
-    /// Analyze an event, tracking backlinks, and return the event unchanged
+    /// Analyze an event, tracking backlinks and categories, and return the event unchanged
     pub fn analyze<'a>(&mut self, event: Event<'a>) -> Event<'a> {
-        // Track links for backlinks
+        // Track links for backlinks (already translated to .html by link_translator)
         if let Event::Start(Tag::Link { ref dest_url, .. }) = event {
             let link = dest_url.to_string();
-            // Handle links with or without fragments (e.g., "file.md" or "file.md#heading")
+            // Handle links with or without fragments (e.g., "file.html" or "file.html#heading")
             let base_link = if let Some(pos) = link.find('#') {
                 &link[..pos]
             } else {
                 &link
             };
-            if base_link.ends_with(".md") {
-                // Store just the filename part for backlinks
-                let filename = base_link.to_string();
-                let backlink_list = self.backlinks
-                    .entry(filename)
-                    .or_default();
-                // Only add if not already present (deduplicate)
-                if !backlink_list.contains(&self.current_file) {
-                    backlink_list.push(self.current_file.clone());
-                }
+            // Only track relative wiki links (no scheme or host)
+            // Skip URLs with schemes like http://, https://, ftp://, file://, etc.
+            // Skip protocol-relative URLs starting with //
+            // This allows relative paths (page.html, ./page.html, ../page.html)
+            // and absolute wiki paths (/page.html) while filtering external URLs
+            let is_relative = !base_link.contains("://") && !base_link.starts_with("//");
+            
+            if is_relative && base_link.ends_with(".html") {
+                self.backlinks
+                    .entry(base_link.to_string())
+                    .or_default()
+                    .insert(self.current_file.clone());
             }
+        }
+        
+        // Track categories (hashtags)
+        if let Event::Text(ref text) = event {
+            let text_str = text.as_ref();
+            
+            hashtag_parser::parse_hashtags(text_str, |_start, _end, category| {
+                self.categories
+                    .entry(category.to_string())
+                    .or_default()
+                    .insert(self.current_file.clone());
+            });
         }
         
         // Track headings
@@ -129,8 +147,13 @@ impl Analyzer {
     }
 
     /// Get the backlinks map
-    pub fn get_backlinks(&self) -> &HashMap<String, Vec<String>> {
+    pub fn get_backlinks(&self) -> &BTreeMap<String, BTreeSet<String>> {
         &self.backlinks
+    }
+    
+    /// Get the categories map
+    pub fn get_categories(&self) -> &BTreeMap<String, BTreeSet<String>> {
+        &self.categories
     }
     
     /// Finalize analysis and return search index

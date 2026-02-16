@@ -2,6 +2,8 @@
 
 The Zettelkasten method is a personal knowledge management system developed by Niklas Luhmann.
 
+Topics: #knowledge-management #productivity
+
 ## Key Principles
 
 1. **Atomic Notes**: Each note should contain one idea

@@ -1,5 +1,7 @@
 mod analyzer;
 mod link_translator;
+mod hashtag_linker;
+mod hashtag_parser;
 mod html_aggregator;
 pub mod filesystem;
 
@@ -9,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use analyzer::Analyzer;
 use link_translator::translate_link;
+use hashtag_linker::linkify_hashtags;
 use html_aggregator::HtmlAggregator;
 use filesystem::{FileSystem, RealFileSystem};
 
@@ -109,15 +112,15 @@ fn convert_wiki<FS: FileSystem>(
     for md_path in &markdown_files {
         let content = fs.read_to_string(md_path)?;
         
-        // Since all markdown files are in root, we can use just the filename
-        let file_name = md_path
+        // Set current file in analyzer (using HTML filename)
+        // Use PathBuf's with_extension to safely change extension
+        let html_filename = md_path
+            .with_extension("html")
             .file_name()
             .and_then(|s| s.to_str())
             .ok_or("Non-UTF8 filename")?
             .to_string();
-        
-        // Set current file in analyzer (using filename)
-        analyzer.set_current_file(file_name.clone());
+        analyzer.set_current_file(html_filename.clone());
         
         // Parse markdown with options
         let mut options = Options::empty();
@@ -127,13 +130,15 @@ fn convert_wiki<FS: FileSystem>(
         let parser = Parser::new_ext(&content, options);
         
         // Stream events through the processing pipeline:
-        // 1. Analyze (track backlinks and headings)
-        // 2. Translate links (.md -> .html)
-        // 3. Aggregate to HTML
+        // 1. Translate links (.md -> .html)
+        // 2. Analyze (track backlinks, categories, and headings) - must see original hashtags
+        // 3. Linkify hashtags (expand text events into link events)
+        // 4. Aggregate to HTML
         let html_content = {
             let aggregator = parser
-                .map(|event| analyzer.analyze(event))
                 .map(translate_link)
+                .map(|event| analyzer.analyze(event))
+                .flat_map(linkify_hashtags)
                 .fold(HtmlAggregator::new(), |aggregator, event| {
                     aggregator.ingest(event)
                 });
@@ -141,29 +146,53 @@ fn convert_wiki<FS: FileSystem>(
             aggregator.to_html_string()
         };
         
-        // Store the generated HTML and filename for second pass
-        generated_html.push((md_path.clone(), file_name, html_content));
+        // Store the generated HTML and HTML filename for second pass
+        generated_html.push((md_path.clone(), html_filename, html_content));
     }
 
     // SECOND PASS: Add backlinks and write files (now all backlinks are complete)
-    for (md_path, md_file_name, html_content) in generated_html {
+    let mut existing_pages = std::collections::HashSet::new();
+    
+    for (md_path, html_file_name, html_content) in generated_html {
+        // Build category pages list if this page is a category
+        let mut category_pages_html = String::new();
+        let category_name = html_file_name.trim_end_matches(".html");
+        if let Some(pages) = analyzer.get_categories().get(category_name) {
+            if !pages.is_empty() {
+                category_pages_html.push_str("<hr>\n<h2>Pages in this category:</h2>\n<ul>\n");
+                for page in pages {
+                    let page_stem = page.trim_end_matches(".html");
+                    category_pages_html.push_str(&format!(
+                        "<li><a href=\"{}\">{}</a></li>\n",
+                        page, page_stem
+                    ));
+                }
+                category_pages_html.push_str("</ul>\n");
+            }
+        }
+        
         // Build backlinks section (now all backlinks are available)
         let mut backlinks_html = String::new();
-        if let Some(links) = analyzer.get_backlinks().get(&md_file_name)
+        if let Some(links) = analyzer.get_backlinks().get(&html_file_name)
             && !links.is_empty() {
                 backlinks_html.push_str("<hr>\n<h2>Linked from:</h2>\n<ul>\n");
                 for link in links {
-                    let link_stem = link.trim_end_matches(".md");
+                    let link_stem = link.trim_end_matches(".html");
                     backlinks_html.push_str(&format!(
-                        "<li><a href=\"{}.html\">{}</a></li>\n",
-                        link_stem, link_stem
+                        "<li><a href=\"{}\">{}</a></li>\n",
+                        link, link_stem
                     ));
                 }
                 backlinks_html.push_str("</ul>\n");
             }
 
-        // Combine header, content, backlinks, and footer
-        let final_html = format!("{}{}{}{}", header, html_content, backlinks_html, footer);
+        // Combine header, content, category pages, backlinks, and footer
+        let mut final_html = String::new();
+        final_html.push_str(&header);
+        final_html.push_str(&html_content);
+        final_html.push_str(&category_pages_html);
+        final_html.push_str(&backlinks_html);
+        final_html.push_str(&footer);
 
         // Calculate the relative path from input_dir to preserve directory structure
         let relative_path = md_path.strip_prefix(input_dir)?;
@@ -176,7 +205,61 @@ fn convert_wiki<FS: FileSystem>(
         
         fs.write(&output_path, &final_html)?;
         
+        // Track this page as existing
+        existing_pages.insert(html_file_name);
+        
         println!("Created: {}", output_path.display());
+    }
+
+    // THIRD PASS: Create category pages that don't already exist
+    for (category_name, pages) in analyzer.get_categories() {
+        let category_html_name = format!("{}.html", category_name);
+        
+        // Only create if this category page doesn't exist
+        if !existing_pages.contains(&category_html_name) && !pages.is_empty() {
+            // Build category page content
+            let mut category_content = String::new();
+            category_content.push_str(&format!("<h1>{}</h1>\n", category_name));
+            
+            // Add pages in this category
+            category_content.push_str("<hr>\n<h2>Pages in this category:</h2>\n<ul>\n");
+            for page in pages {
+                let page_stem = page.trim_end_matches(".html");
+                category_content.push_str(&format!(
+                    "<li><a href=\"{}\">{}</a></li>\n",
+                    page, page_stem
+                ));
+            }
+            category_content.push_str("</ul>\n");
+            
+            // Add backlinks section if any
+            let mut backlinks_html = String::new();
+            if let Some(links) = analyzer.get_backlinks().get(&category_html_name) {
+                if !links.is_empty() {
+                    backlinks_html.push_str("<hr>\n<h2>Linked from:</h2>\n<ul>\n");
+                    for link in links {
+                        let link_stem = link.trim_end_matches(".html");
+                        backlinks_html.push_str(&format!(
+                            "<li><a href=\"{}\">{}</a></li>\n",
+                            link, link_stem
+                        ));
+                    }
+                    backlinks_html.push_str("</ul>\n");
+                }
+            }
+            
+            // Combine header, content, backlinks, and footer
+            let mut final_html = String::new();
+            final_html.push_str(&header);
+            final_html.push_str(&category_content);
+            final_html.push_str(&backlinks_html);
+            final_html.push_str(&footer);
+            
+            // Write the category page
+            let output_path = Path::new(output_dir).join(&category_html_name);
+            fs.write(&output_path, &final_html)?;
+            println!("Created category page: {}", output_path.display());
+        }
     }
 
     // Copy all non-.md files (preserving directory structure)
