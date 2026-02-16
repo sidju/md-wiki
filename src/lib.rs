@@ -63,7 +63,9 @@ pub fn convert_wiki<FS: FileSystem>(
     // Create analyzer to track backlinks across all files
     let mut analyzer = Analyzer::new();
 
-    // FIRST PASS: Analyze all markdown files to build complete backlinks map
+    // FIRST PASS: Analyze all markdown files and generate HTML (but don't write yet)
+    let mut generated_html: Vec<(PathBuf, String, String)> = Vec::new();
+    
     for md_path in &markdown_files {
         let content = fs.read_to_string(md_path)?;
         
@@ -83,32 +85,13 @@ pub fn convert_wiki<FS: FileSystem>(
         options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
         let parser = Parser::new_ext(&content, options);
         
-        // Analyze to build backlinks and heading index
-        for event in parser {
-            analyzer.analyze(event);
-        }
-    }
-
-    // SECOND PASS: Generate HTML files with complete backlinks available
-    for md_path in &markdown_files {
-        let content = fs.read_to_string(md_path)?;
-        
-        let file_name = md_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
-        
-        // Parse markdown with options
-        let mut options = Options::empty();
-        options.insert(Options::ENABLE_STRIKETHROUGH);
-        options.insert(Options::ENABLE_TABLES);
-        options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
-        let parser = Parser::new_ext(&content, options);
-        
-        // Generate HTML (translate links and aggregate)
+        // Stream events through the processing pipeline:
+        // 1. Analyze (track backlinks and headings)
+        // 2. Translate links (.md -> .html)
+        // 3. Aggregate to HTML
         let html_content = {
             let aggregator = parser
+                .map(|event| analyzer.analyze(event))
                 .map(translate_link)
                 .fold(HtmlAggregator::new(), |aggregator, event| {
                     aggregator.ingest(event)
@@ -116,13 +99,13 @@ pub fn convert_wiki<FS: FileSystem>(
             
             aggregator.to_html_string()
         };
+        
+        // Store the generated HTML and path for second pass
+        generated_html.push((md_path.clone(), file_name, html_content));
+    }
 
-        let md_file_name = md_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
-
+    // SECOND PASS: Add backlinks and write files (now all backlinks are complete)
+    for (md_path, md_file_name, html_content) in generated_html {
         // Build backlinks section (now all backlinks are available)
         let mut backlinks_html = String::new();
         if let Some(links) = analyzer.get_backlinks().get(&md_file_name)
