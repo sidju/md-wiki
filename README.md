@@ -11,6 +11,9 @@ A minimal wiki over zettelkästen inspired markdown notes.
 - Generates category pages: pages tagged with `#categories` are automatically
   collected into category index pages.
 
+You could consider it a relative of <https://crates.io/crates/marmite>, but focused on
+wikis and notes rather than blogs.
+
 
 ## Non-Goals
 
