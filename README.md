@@ -73,6 +73,39 @@ local html files).
 Note the `search.js` file in the examples dir that utilizes this index for a
 basic search bar.
 
+### Ignoring files and directories
+
+By default, `md-wiki` ignores all files and directories starting with a dot (like
+`.git`, `.hidden`, etc.) to avoid processing version control files and other hidden
+system files. You can customize which files to ignore using the `--ignore-paths` flag.
+
+The flag accepts simple wildcard patterns and can be specified multiple times:
+
+```bash
+# Default behavior - ignores dotfiles
+md-wiki src/ out/
+
+# Ignore specific file types (replaces default)
+md-wiki src/ out/ --ignore-paths "*.tmp" --ignore-paths "*.bak"
+
+# Ignore dotfiles AND specific patterns (must explicitly include .*)
+md-wiki src/ out/ --ignore-paths ".*" --ignore-paths "node_modules"
+
+# Disable all filtering (include everything)
+md-wiki src/ out/ --ignore-paths ""
+```
+
+Supported pattern formats:
+- `.*` - matches files/directories starting with a dot
+- `*.ext` - matches files ending with a specific extension
+- `prefix*` - matches files starting with a prefix
+- `*substring*` - matches files containing a substring
+- `*` - matches everything
+
+Note: When you specify any `--ignore-paths` value, it replaces the default dotfile
+filtering. To keep ignoring dotfiles while adding additional patterns, you must
+explicitly include `.*` in your patterns.
+
 
 ## Contributing
 
