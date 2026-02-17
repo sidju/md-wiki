@@ -22,8 +22,8 @@ pub trait FileSystem {
     /// Check if a path exists
     fn exists(&self, path: &Path) -> bool;
 
-    /// Walk a directory and return all file paths
-    fn walk_dir(&self, path: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>>;
+    /// Walk a directory and return all file paths, filtering by ignore patterns
+    fn walk_dir(&self, path: &Path, ignore_patterns: &[String]) -> Result<Vec<PathBuf>, Box<dyn Error>>;
 }
 
 /// Real file system implementation
@@ -51,9 +51,28 @@ impl FileSystem for RealFileSystem {
         path.exists()
     }
 
-    fn walk_dir(&self, path: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+    fn walk_dir(&self, path: &Path, ignore_patterns: &[String]) -> Result<Vec<PathBuf>, Box<dyn Error>> {
         let mut paths = Vec::new();
-        for entry in WalkDir::new(path) {
+        
+        // Create a filter function that checks if the entry matches any ignore pattern
+        let should_include = |entry: &walkdir::DirEntry| -> bool {
+            let file_name = entry.file_name().to_str().unwrap_or_else(|| {
+                // Non-UTF8 filenames are rare and may cause unexpected behavior
+                // Use a placeholder that won't match common patterns
+                "<non-utf8-filename>"
+            });
+            
+            // Check if the file/directory name matches any ignore pattern
+            for pattern in ignore_patterns {
+                // Simple glob pattern matching: support wildcards
+                if matches_pattern(file_name, pattern) {
+                    return false;
+                }
+            }
+            true
+        };
+        
+        for entry in WalkDir::new(path).into_iter().filter_entry(should_include) {
             let entry = entry?;
             if entry.path().is_file() {
                 paths.push(entry.path().to_path_buf());
@@ -61,6 +80,40 @@ impl FileSystem for RealFileSystem {
         }
         Ok(paths)
     }
+}
+
+/// Simple pattern matching that supports basic wildcards
+/// Supports: ".*" (starts with dot), "*suffix", "prefix*", "*middle*"
+fn matches_pattern(name: &str, pattern: &str) -> bool {
+    // Handle wildcard-only patterns first for clarity
+    if pattern == "*" || pattern == "**" {
+        return true;
+    }
+    
+    if pattern.is_empty() {
+        return false;
+    }
+    
+    if pattern.starts_with('*') && pattern.ends_with('*') {
+        // *middle* - contains substring
+        let middle = &pattern[1..pattern.len()-1];
+        return name.contains(middle);
+    }
+    
+    if pattern.starts_with('*') {
+        // *suffix - ends with
+        let suffix = &pattern[1..];
+        return name.ends_with(suffix);
+    }
+    
+    if pattern.ends_with('*') {
+        // prefix* - starts with
+        let prefix = &pattern[..pattern.len()-1];
+        return name.starts_with(prefix);
+    }
+    
+    // Exact match
+    name == pattern
 }
 
 /// Mock file system for testing
@@ -123,11 +176,27 @@ impl FileSystem for MockFileSystem {
         self.files.borrow().contains_key(path)
     }
 
-    fn walk_dir(&self, base_path: &Path) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+    fn walk_dir(&self, base_path: &Path, ignore_patterns: &[String]) -> Result<Vec<PathBuf>, Box<dyn Error>> {
         let paths: Vec<PathBuf> = self.files
             .borrow()
             .keys()
-            .filter(|path| path.starts_with(base_path))
+            .filter(|path| {
+                if !path.starts_with(base_path) {
+                    return false;
+                }
+                
+                // Check each component of the path against ignore patterns
+                for component in path.components() {
+                    if let Some(name) = component.as_os_str().to_str() {
+                        for pattern in ignore_patterns {
+                            if matches_pattern(name, pattern) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                true
+            })
             .cloned()
             .collect();
         Ok(paths)

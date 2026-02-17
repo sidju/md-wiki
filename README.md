@@ -73,6 +73,12 @@ local html files).
 Note the `search.js` file in the examples dir that utilizes this index for a
 basic search bar.
 
+### Ignoring files and directories
+
+By default, `md-wiki` ignores all files and directories starting with a dot
+(like `.git`, `.hidden`, etc.). This can be customized using the `--ignore-paths`
+flag, which accepts wildcard patterns and can be specified multiple times.
+
 
 ## Contributing
 
