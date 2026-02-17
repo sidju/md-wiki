@@ -78,8 +78,9 @@ impl FileSystem for RealFileSystem {
                 "<non-utf8-filename>"
             });
             
-            // Always include special directories "." and ".." to support current/parent directory
-            if file_name == "." || file_name == ".." {
+            // Always include special directories "." and ".." but only at the root level (depth 0)
+            // to support using current/parent directory as the source
+            if entry.depth() == 0 && (file_name == "." || file_name == "..") {
                 return true;
             }
             
@@ -183,15 +184,10 @@ impl FileSystem for MockFileSystem {
                     return false;
                 }
                 
-                // Check each component of the path against ignore patterns
+                // Check path components against ignore patterns
                 // Skip components that are part of the base_path
                 let components: Vec<_> = path.components().collect();
-                for (idx, component) in components.iter().enumerate() {
-                    // Skip components that are part of base_path
-                    if idx < base_components.len() {
-                        continue;
-                    }
-                    
+                for component in components.iter().skip(base_components.len()) {
                     if let Some(name) = component.as_os_str().to_str() {
                         // Check if component matches any glob pattern
                         if globset.is_match(name) {
