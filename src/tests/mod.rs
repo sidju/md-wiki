@@ -8,6 +8,7 @@ pub mod search;
 pub mod headings;
 pub mod hashtags;
 pub mod categories;
+pub mod ignore;
 
 /// Test fixture for setting up a mock filesystem with common test data
 pub struct WikiTestFixture {
@@ -61,6 +62,7 @@ impl WikiTestFixture {
             self.input_dir.to_str().unwrap(),
             self.output_dir.to_str().unwrap(),
             None,
+            &[], // No ignore patterns for existing tests
         )
     }
 
@@ -71,6 +73,18 @@ impl WikiTestFixture {
             self.input_dir.to_str().unwrap(),
             self.output_dir.to_str().unwrap(),
             Some(index_filename),
+            &[], // No ignore patterns for existing tests
+        )
+    }
+
+    /// Run the wiki conversion with custom ignore patterns
+    pub fn convert_with_ignore(&self, ignore_patterns: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+        crate::convert_wiki(
+            &self.fs,
+            self.input_dir.to_str().unwrap(),
+            self.output_dir.to_str().unwrap(),
+            None,
+            ignore_patterns,
         )
     }
 

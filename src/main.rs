@@ -30,13 +30,17 @@ struct Args {
     /// Optional filename for search index (written to output directory)
     #[arg(long = "index-filename")]
     index_filename: Option<String>,
+
+    /// Patterns to ignore when walking directories (default: ".*" to ignore dotfiles)
+    #[arg(long = "ignore-paths", default_values_t = vec![String::from(".*")])]
+    ignore_paths: Vec<String>,
 }
 
 fn main() {
     let args = Args::parse();
 
     let fs = RealFileSystem;
-    match convert_wiki(&fs, &args.input_directory, &args.output_directory, args.index_filename.as_deref()) {
+    match convert_wiki(&fs, &args.input_directory, &args.output_directory, args.index_filename.as_deref(), &args.ignore_paths) {
         Ok(_) => println!("Successfully converted markdown files to HTML"),
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -51,6 +55,7 @@ fn convert_wiki<FS: FileSystem>(
     input_dir: &str,
     output_dir: &str,
     index_filename: Option<&str>,
+    ignore_patterns: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Load header and footer
     let header_path = Path::new(input_dir).join("header.html");
@@ -72,7 +77,7 @@ fn convert_wiki<FS: FileSystem>(
     let mut markdown_files: Vec<PathBuf> = Vec::new();
     let mut other_files: Vec<PathBuf> = Vec::new();
 
-    let all_files = fs.walk_dir(Path::new(input_dir))?;
+    let all_files = fs.walk_dir(Path::new(input_dir), ignore_patterns)?;
     for path in all_files {
         // Skip header.html and footer.html as they are templates
         // Note: Files with non-UTF8 names won't be skipped even if they're actually
