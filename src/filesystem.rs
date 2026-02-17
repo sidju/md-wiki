@@ -85,20 +85,34 @@ fn matches_pattern(name: &str, pattern: &str) -> bool {
         return true;
     }
     
+    if pattern.is_empty() {
+        return false;
+    }
+    
     if pattern.starts_with('*') && pattern.ends_with('*') {
         // *middle* - contains
+        if pattern.len() <= 2 {
+            // Pattern is just "*" or "**", match everything or nothing
+            return pattern.len() == 1;
+        }
         let middle = &pattern[1..pattern.len()-1];
         return name.contains(middle);
     }
     
     if pattern.starts_with('*') {
         // *suffix - ends with
+        if pattern.len() == 1 {
+            return true; // Already handled above, but being defensive
+        }
         let suffix = &pattern[1..];
         return name.ends_with(suffix);
     }
     
     if pattern.ends_with('*') {
         // prefix* - starts with
+        if pattern.len() == 1 {
+            return true; // Already handled above, but being defensive
+        }
         let prefix = &pattern[..pattern.len()-1];
         return name.starts_with(prefix);
     }

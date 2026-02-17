@@ -89,3 +89,53 @@ fn test_ignore_dotfiles_in_subdirectories() {
     fixture.assert_output_not_exists("assets/.hidden.png");
     fixture.assert_output_not_exists(".git/config");
 }
+
+#[test]
+fn test_edge_case_patterns() {
+    let fixture = WikiTestFixture::new();
+
+    fixture
+        .add_markdown_file("index.md", "# Index\n\nMain page.")
+        .add_file("test.txt", "test")
+        .add_file("a", "single char name")
+        .add_file("ab", "two char name");
+
+    // Test with single character pattern followed by wildcard
+    fixture.convert_with_ignore(&[String::from("a*")]).expect("Should handle 'a*' pattern");
+    fixture.assert_output_exists("test.txt");
+    fixture.assert_output_not_exists("a");
+    fixture.assert_output_not_exists("ab");
+}
+
+#[test]
+fn test_wildcard_only_pattern() {
+    let fixture = WikiTestFixture::new();
+
+    fixture
+        .add_markdown_file("index.md", "# Index\n\nMain page.")
+        .add_file("file1.txt", "file1")
+        .add_file("file2.txt", "file2");
+
+    // Test with wildcard only pattern (should match everything)
+    fixture.convert_with_ignore(&[String::from("*")]).expect("Should handle '*' pattern");
+    
+    // All non-markdown files should be ignored
+    fixture.assert_output_not_exists("file1.txt");
+    fixture.assert_output_not_exists("file2.txt");
+}
+
+#[test]
+fn test_suffix_pattern() {
+    let fixture = WikiTestFixture::new();
+
+    fixture
+        .add_markdown_file("index.md", "# Index\n\nMain page.")
+        .add_file("file.log", "log file")
+        .add_file("data.txt", "text file");
+
+    // Test suffix pattern
+    fixture.convert_with_ignore(&[String::from("*.log")]).expect("Should handle suffix pattern");
+    
+    fixture.assert_output_exists("data.txt");
+    fixture.assert_output_not_exists("file.log");
+}
