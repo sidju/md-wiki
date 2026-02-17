@@ -56,7 +56,11 @@ impl FileSystem for RealFileSystem {
         
         // Create a filter function that checks if the entry matches any ignore pattern
         let should_include = |entry: &walkdir::DirEntry| -> bool {
-            let file_name = entry.file_name().to_str().unwrap_or("");
+            let file_name = entry.file_name().to_str().unwrap_or_else(|| {
+                // Non-UTF8 filenames are rare and may cause unexpected behavior
+                // Use a placeholder that won't match common patterns
+                "<non-utf8-filename>"
+            });
             
             // Check if the file/directory name matches any ignore pattern
             for pattern in ignore_patterns {
@@ -81,7 +85,8 @@ impl FileSystem for RealFileSystem {
 /// Simple pattern matching that supports basic wildcards
 /// Supports: ".*" (starts with dot), "*suffix", "prefix*", "*middle*"
 fn matches_pattern(name: &str, pattern: &str) -> bool {
-    if pattern == "*" {
+    // Handle wildcard-only patterns first for clarity
+    if pattern == "*" || pattern == "**" {
         return true;
     }
     
@@ -90,12 +95,7 @@ fn matches_pattern(name: &str, pattern: &str) -> bool {
     }
     
     if pattern.starts_with('*') && pattern.ends_with('*') {
-        // *middle* - contains
-        if pattern.len() <= 2 {
-            // Pattern is just "*" or "**"
-            // "*" already handled above, "**" matches everything (empty middle string)
-            return true;
-        }
+        // *middle* - contains substring
         let middle = &pattern[1..pattern.len()-1];
         return name.contains(middle);
     }
