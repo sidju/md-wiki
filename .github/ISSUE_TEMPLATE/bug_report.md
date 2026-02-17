@@ -1,3 +1,11 @@
+---
+name: Bug report or feature request
+about: Report a bug or request a feature
+title: ''
+labels: ''
+assignees: ''
+---
+
 ## Pre-submission Checklist
 
 Before submitting this issue, please verify:

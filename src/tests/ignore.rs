@@ -156,3 +156,63 @@ fn test_double_wildcard_pattern() {
     fixture.assert_output_not_exists("file1.txt");
     fixture.assert_output_not_exists("file2.txt");
 }
+
+#[test]
+fn test_current_directory_not_filtered() {
+    // Test that "." is treated as a special case and not filtered by ".*" pattern
+    let fixture = WikiTestFixture::with_paths(".", "/output");
+    
+    fixture
+        .add_markdown_file("index.md", "# Index\n\nMain page.")
+        .add_file("visible.txt", "visible content")
+        .add_file(".hidden.txt", "hidden content");
+    
+    // Convert with default ignore patterns (should not filter "." itself)
+    fixture.convert_with_ignore(&[String::from(".*")])
+        .expect("Conversion should succeed with '.' as input");
+    
+    // Check that files were processed
+    fixture.assert_output_exists("index.html");
+    fixture.assert_output_exists("visible.txt");
+    
+    // Check that dotfiles are still filtered
+    fixture.assert_output_not_exists(".hidden.txt");
+}
+
+#[test]
+fn test_parent_directory_not_filtered() {
+    // Test that ".." is treated as a special case and not filtered by ".*" pattern
+    let fixture = WikiTestFixture::with_paths("../parent", "/output");
+    
+    fixture
+        .add_markdown_file("index.md", "# Index\n\nMain page.")
+        .add_file("visible.txt", "visible content");
+    
+    // Convert with default ignore patterns (should not filter ".." itself)
+    fixture.convert_with_ignore(&[String::from(".*")])
+        .expect("Conversion should succeed with '..' in path");
+    
+    // Check that files were processed
+    fixture.assert_output_exists("index.html");
+    fixture.assert_output_exists("visible.txt");
+}
+
+#[test]
+fn test_dotfiles_in_parent_path_still_filtered() {
+    // Test that dotfiles within paths using ".." are still filtered correctly
+    let fixture = WikiTestFixture::with_paths("../parent", "/output");
+    
+    fixture
+        .add_markdown_file("index.md", "# Index\n\nMain page.")
+        .add_file(".hidden/.secret.txt", "secret content")
+        .add_file(".hidden/data.txt", "data in hidden dir");
+    
+    // Convert with default ignore patterns
+    fixture.convert_with_ignore(&[String::from(".*")])
+        .expect("Conversion should succeed");
+    
+    // Check that dotfiles and directories starting with dot are still filtered
+    fixture.assert_output_exists("index.html");
+    fixture.assert_output_not_exists(".hidden/.secret.txt");
+    fixture.assert_output_not_exists(".hidden/data.txt");
+}

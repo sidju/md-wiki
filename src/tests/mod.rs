@@ -27,6 +27,15 @@ impl WikiTestFixture {
         }
     }
 
+    /// Create a new test fixture with custom paths
+    pub fn with_paths(input_dir: impl Into<PathBuf>, output_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            fs: MockFileSystem::new(),
+            input_dir: input_dir.into(),
+            output_dir: output_dir.into(),
+        }
+    }
+
     /// Add a markdown file to the mock filesystem
     pub fn add_markdown_file(&self, name: &str, content: &str) -> &Self {
         let path = self.input_dir.join(name);

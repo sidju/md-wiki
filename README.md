@@ -46,6 +46,14 @@ md-wiki example example/output --index-filename search-data.js
 
 Then open `example/output/index.html` in your browser.
 
+You can also use the current directory as the source:
+
+```bash
+md-wiki . output
+```
+
+This will process all markdown files in the current directory and output HTML files to the `output` subdirectory.
+
 ### Wiki source directory structure
 
 Here follows the files taken as input:
@@ -77,7 +85,13 @@ basic search bar.
 
 By default, `md-wiki` ignores all files and directories starting with a dot
 (like `.git`, `.hidden`, etc.). This can be customized using the `--ignore-paths`
-flag, which accepts wildcard patterns and can be specified multiple times.
+flag, which accepts glob patterns and can be specified multiple times.
+
+**Note:** The special directories `.` (current directory) and `..` (parent directory) 
+are always exempt from filtering when used as the source directory path. This allows 
+you to use `.` as the input directory while still filtering out dotfiles within it. 
+For example, with the default `.*` pattern, `md-wiki . output` will process files in 
+the current directory but will still ignore `.git/`, `.hidden`, and other dotfiles.
 
 
 ## Contributing
