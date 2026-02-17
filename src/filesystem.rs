@@ -92,8 +92,9 @@ fn matches_pattern(name: &str, pattern: &str) -> bool {
     if pattern.starts_with('*') && pattern.ends_with('*') {
         // *middle* - contains
         if pattern.len() <= 2 {
-            // Pattern is just "*" or "**", match everything or nothing
-            return pattern.len() == 1;
+            // Pattern is just "*" or "**"
+            // "*" already handled above, "**" matches everything (empty middle string)
+            return true;
         }
         let middle = &pattern[1..pattern.len()-1];
         return name.contains(middle);
@@ -101,18 +102,12 @@ fn matches_pattern(name: &str, pattern: &str) -> bool {
     
     if pattern.starts_with('*') {
         // *suffix - ends with
-        if pattern.len() == 1 {
-            return true; // Already handled above, but being defensive
-        }
         let suffix = &pattern[1..];
         return name.ends_with(suffix);
     }
     
     if pattern.ends_with('*') {
         // prefix* - starts with
-        if pattern.len() == 1 {
-            return true; // Already handled above, but being defensive
-        }
         let prefix = &pattern[..pattern.len()-1];
         return name.starts_with(prefix);
     }

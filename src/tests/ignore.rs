@@ -139,3 +139,20 @@ fn test_suffix_pattern() {
     fixture.assert_output_exists("data.txt");
     fixture.assert_output_not_exists("file.log");
 }
+
+#[test]
+fn test_double_wildcard_pattern() {
+    let fixture = WikiTestFixture::new();
+
+    fixture
+        .add_markdown_file("index.md", "# Index\n\nMain page.")
+        .add_file("file1.txt", "file1")
+        .add_file("file2.txt", "file2");
+
+    // Test with double wildcard pattern (should match everything like single wildcard)
+    fixture.convert_with_ignore(&[String::from("**")]).expect("Should handle '**' pattern");
+    
+    // All non-markdown files should be ignored
+    fixture.assert_output_not_exists("file1.txt");
+    fixture.assert_output_not_exists("file2.txt");
+}
