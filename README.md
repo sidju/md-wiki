@@ -44,9 +44,9 @@ instructions.
 Here follows the files taken as input:
 - `*.md`, processed into html files in the output dir.
   (Note that only markdown files directly in the source dir are processed)
-- `header.html`, prepended to the generated html for each markdown file.
+- `.header.html`, prepended to the generated html for each markdown file.
   Expected to open the `<html>` and `<body>` tags, should containt `<head>`.
-- `footer.html`, appended to the generated html for each markdown file.
+- `.footer.html`, appended to the generated html for each markdown file.
   Expected to close the `<body>` and `<html>` tags.
 - `**/*`, all other files and directories are assumed to be assets and copied
   over as-is.
@@ -68,16 +68,12 @@ basic search bar.
 
 ### Ignoring files and directories
 
-By default, `md-wiki` ignores all files and directories starting with a dot
-(like `.git`, `.hidden`, etc.). This can be customized using the `--ignore-paths`
-flag, which accepts glob patterns and can be specified multiple times.
-
-**Note:** The special directories `.` (current directory) and `..` (parent directory) 
-are always exempt from filtering when used as the source directory path. This allows 
-you to use `.` as the input directory while still filtering out dotfiles within it. 
-For example, with the default `.*` pattern, `md-wiki . output` will process files in 
-the current directory but will still ignore `.git/`, `.hidden`, and other dotfiles.
-
+`md-wiki` copies over all files to the output dir but by default ignores all
+files and directories starting with a dot (like `.git`, `.hidden`, etc.).
+This can be customized using the `--ignore-paths` flag, which accepts wildcard
+patterns and can be specified multiple times for multiple patterns which are
+OR:ed together (`.header.html` and `.footer.html` are always read and excluded
+from output).
 
 ## Contributing
 

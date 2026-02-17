@@ -52,14 +52,14 @@ impl WikiTestFixture {
 
     /// Add a header.html template
     pub fn add_header(&self, content: &str) -> &Self {
-        let path = self.input_dir.join("header.html");
+        let path = self.input_dir.join(".header.html");
         self.fs.add_file(path, content);
         self
     }
 
     /// Add a footer.html template
     pub fn add_footer(&self, content: &str) -> &Self {
-        let path = self.input_dir.join("footer.html");
+        let path = self.input_dir.join(".footer.html");
         self.fs.add_file(path, content);
         self
     }

@@ -1,6 +1,6 @@
 [package]
 name = "md-wiki"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 description = "Markdown based static site generator for minimal wikis"
 repository = "https://github.com/sidju/md-wiki"

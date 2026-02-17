@@ -21,10 +21,11 @@ use filesystem::{FileSystem, RealFileSystem};
 #[command(version, about, long_about = None)]
 struct Args {
     /// Directory containing markdown files
+    #[arg(default_value = ".")]
     input_directory: String,
 
     /// Directory where HTML files will be created
-    #[arg(default_value = ".")]
+    #[arg(default_value = "output")]
     output_directory: String,
 
     /// Optional filename for search index (written to output directory)
@@ -58,8 +59,8 @@ fn convert_wiki<FS: FileSystem>(
     ignore_patterns: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Load header and footer
-    let header_path = Path::new(input_dir).join("header.html");
-    let footer_path = Path::new(input_dir).join("footer.html");
+    let header_path = Path::new(input_dir).join(".header.html");
+    let footer_path = Path::new(input_dir).join(".footer.html");
 
     let header = if fs.exists(&header_path) {
         fs.read_to_string(&header_path)?
@@ -84,7 +85,7 @@ fn convert_wiki<FS: FileSystem>(
         // named header.html or footer.html, but this is an extremely rare edge case
         // and such files would fail to process correctly anyway
         let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        if file_name == "header.html" || file_name == "footer.html" {
+        if file_name == ".header.html" || file_name == ".footer.html" {
             continue;
         }
 
