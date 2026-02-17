@@ -156,3 +156,60 @@ fn test_double_wildcard_pattern() {
     fixture.assert_output_not_exists("file1.txt");
     fixture.assert_output_not_exists("file2.txt");
 }
+
+#[test]
+fn test_current_directory_not_filtered() {
+    // Test that "." is treated as a special case and not filtered by ".*" pattern
+    
+    // Use "." as input directory
+    let fs = crate::filesystem::MockFileSystem::new();
+    fs.add_file("./index.md", "# Index\n\nMain page.");
+    fs.add_file("./visible.txt", "visible content");
+    fs.add_file("./.hidden.txt", "hidden content");
+    
+    // Convert with default ignore patterns (should not filter "." itself)
+    let result = crate::convert_wiki(
+        &fs,
+        ".",
+        "/output",
+        None,
+        &[String::from(".*")],
+    );
+    
+    assert!(result.is_ok(), "Conversion should succeed with '.' as input");
+    
+    // Check that files were processed
+    assert!(fs.get_file(&std::path::PathBuf::from("/output/index.html")).is_some(),
+        "index.html should be created");
+    assert!(fs.get_file(&std::path::PathBuf::from("/output/visible.txt")).is_some(),
+        "visible.txt should be copied");
+    assert!(fs.get_file(&std::path::PathBuf::from("/output/.hidden.txt")).is_none(),
+        ".hidden.txt should still be filtered");
+}
+
+#[test]
+fn test_parent_directory_not_filtered() {
+    // Test that ".." is treated as a special case and not filtered by ".*" pattern
+    
+    // Use ".." in path components
+    let fs = crate::filesystem::MockFileSystem::new();
+    fs.add_file("../parent/index.md", "# Index\n\nMain page.");
+    fs.add_file("../parent/visible.txt", "visible content");
+    
+    // Convert with default ignore patterns (should not filter ".." itself)
+    let result = crate::convert_wiki(
+        &fs,
+        "../parent",
+        "/output",
+        None,
+        &[String::from(".*")],
+    );
+    
+    assert!(result.is_ok(), "Conversion should succeed with '..' in path");
+    
+    // Check that files were processed
+    assert!(fs.get_file(&std::path::PathBuf::from("/output/index.html")).is_some(),
+        "index.html should be created");
+    assert!(fs.get_file(&std::path::PathBuf::from("/output/visible.txt")).is_some(),
+        "visible.txt should be copied");
+}

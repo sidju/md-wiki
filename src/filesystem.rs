@@ -4,6 +4,7 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+use globset::{Glob, GlobSetBuilder};
 
 /// Trait for file system operations to allow dependency injection and mocking
 pub trait FileSystem {
@@ -54,6 +55,21 @@ impl FileSystem for RealFileSystem {
     fn walk_dir(&self, path: &Path, ignore_patterns: &[String]) -> Result<Vec<PathBuf>, Box<dyn Error>> {
         let mut paths = Vec::new();
         
+        // Build a GlobSet from the ignore patterns for efficient matching
+        let mut builder = GlobSetBuilder::new();
+        for pattern in ignore_patterns {
+            // Build glob patterns, handling any errors
+            match Glob::new(pattern) {
+                Ok(glob) => {
+                    builder.add(glob);
+                }
+                Err(e) => {
+                    return Err(format!("Invalid glob pattern '{}': {}", pattern, e).into());
+                }
+            }
+        }
+        let globset = builder.build()?;
+        
         // Create a filter function that checks if the entry matches any ignore pattern
         let should_include = |entry: &walkdir::DirEntry| -> bool {
             let file_name = entry.file_name().to_str().unwrap_or_else(|| {
@@ -62,14 +78,13 @@ impl FileSystem for RealFileSystem {
                 "<non-utf8-filename>"
             });
             
-            // Check if the file/directory name matches any ignore pattern
-            for pattern in ignore_patterns {
-                // Simple glob pattern matching: support wildcards
-                if matches_pattern(file_name, pattern) {
-                    return false;
-                }
+            // Always include special directories "." and ".." to support current/parent directory
+            if file_name == "." || file_name == ".." {
+                return true;
             }
-            true
+            
+            // Check if the file/directory name matches any ignore pattern using globset
+            !globset.is_match(file_name)
         };
         
         for entry in WalkDir::new(path).into_iter().filter_entry(should_include) {
@@ -80,40 +95,6 @@ impl FileSystem for RealFileSystem {
         }
         Ok(paths)
     }
-}
-
-/// Simple pattern matching that supports basic wildcards
-/// Supports: ".*" (starts with dot), "*suffix", "prefix*", "*middle*"
-fn matches_pattern(name: &str, pattern: &str) -> bool {
-    // Handle wildcard-only patterns first for clarity
-    if pattern == "*" || pattern == "**" {
-        return true;
-    }
-    
-    if pattern.is_empty() {
-        return false;
-    }
-    
-    if pattern.starts_with('*') && pattern.ends_with('*') {
-        // *middle* - contains substring
-        let middle = &pattern[1..pattern.len()-1];
-        return name.contains(middle);
-    }
-    
-    if pattern.starts_with('*') {
-        // *suffix - ends with
-        let suffix = &pattern[1..];
-        return name.ends_with(suffix);
-    }
-    
-    if pattern.ends_with('*') {
-        // prefix* - starts with
-        let prefix = &pattern[..pattern.len()-1];
-        return name.starts_with(prefix);
-    }
-    
-    // Exact match
-    name == pattern
 }
 
 /// Mock file system for testing
@@ -177,6 +158,20 @@ impl FileSystem for MockFileSystem {
     }
 
     fn walk_dir(&self, base_path: &Path, ignore_patterns: &[String]) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+        // Build a GlobSet from the ignore patterns for efficient matching
+        let mut builder = GlobSetBuilder::new();
+        for pattern in ignore_patterns {
+            match Glob::new(pattern) {
+                Ok(glob) => {
+                    builder.add(glob);
+                }
+                Err(e) => {
+                    return Err(format!("Invalid glob pattern '{}': {}", pattern, e).into());
+                }
+            }
+        }
+        let globset = builder.build()?;
+        
         let paths: Vec<PathBuf> = self.files
             .borrow()
             .keys()
@@ -188,10 +183,14 @@ impl FileSystem for MockFileSystem {
                 // Check each component of the path against ignore patterns
                 for component in path.components() {
                     if let Some(name) = component.as_os_str().to_str() {
-                        for pattern in ignore_patterns {
-                            if matches_pattern(name, pattern) {
-                                return false;
-                            }
+                        // Always include special directories "." and ".." to support current/parent directory
+                        if name == "." || name == ".." {
+                            continue;
+                        }
+                        
+                        // Check if component matches any glob pattern
+                        if globset.is_match(name) {
+                            return false;
                         }
                     }
                 }
