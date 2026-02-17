@@ -172,6 +172,9 @@ impl FileSystem for MockFileSystem {
         }
         let globset = builder.build()?;
         
+        // Normalize base_path components for comparison
+        let base_components: Vec<_> = base_path.components().collect();
+        
         let paths: Vec<PathBuf> = self.files
             .borrow()
             .keys()
@@ -181,13 +184,15 @@ impl FileSystem for MockFileSystem {
                 }
                 
                 // Check each component of the path against ignore patterns
-                for component in path.components() {
+                // Skip components that are part of the base_path
+                let components: Vec<_> = path.components().collect();
+                for (idx, component) in components.iter().enumerate() {
+                    // Skip components that are part of base_path
+                    if idx < base_components.len() {
+                        continue;
+                    }
+                    
                     if let Some(name) = component.as_os_str().to_str() {
-                        // Always include special directories "." and ".." to support current/parent directory
-                        if name == "." || name == ".." {
-                            continue;
-                        }
-                        
                         // Check if component matches any glob pattern
                         if globset.is_match(name) {
                             return false;
