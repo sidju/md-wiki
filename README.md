@@ -38,21 +38,6 @@ After that `md-wiki` should be available in your path (assuming you've added
 `$HOME/.cargo/bin` to your path). Run `md-wiki --help` for full usage
 instructions.
 
-### Example
-
-```bash
-md-wiki example example/output --index-filename search-data.js
-```
-
-Then open `example/output/index.html` in your browser.
-
-You can also use the current directory as the source:
-
-```bash
-md-wiki . output
-```
-
-This will process all markdown files in the current directory and output HTML files to the `output` subdirectory.
 
 ### Wiki source directory structure
 
@@ -78,7 +63,7 @@ to create a javascript file in the output directory that writes the index to
 `window.SEARCH_INDEX_DATA` (javascript because a fetch for a json file errors on
 local html files).
 
-Note the `search.js` file in the examples dir that utilizes this index for a
+Note the `search.js` file in the examples dir which utilizes this index for a
 basic search bar.
 
 ### Ignoring files and directories
