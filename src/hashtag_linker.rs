@@ -1,45 +1,59 @@
-use pulldown_cmark::{Event, Tag, LinkType, CowStr};
+use std::borrow::Cow;
+use comrak::Arena;
+use comrak::nodes::{AstNode, NodeValue, NodeLink};
+use comrak::nodes::AstNode as Node;
 use crate::hashtag_parser;
 
-/// Convert hashtags in text to clickable links
-/// Returns a vector of events that should replace the input event
-pub fn linkify_hashtags<'a>(event: Event<'a>) -> Vec<Event<'a>> {
-    match event {
-        Event::Text(text) => {
-            let text_str = text.as_ref();
-            let mut events = Vec::new();
-            let mut last_end = 0;
+/// Convert hashtags in text nodes to clickable link nodes in the AST
+pub fn linkify_hashtags<'a>(arena: &'a Arena<'a>, root: &'a AstNode<'a>) {
+    // Collect text nodes that contain '#' (avoid mutating while iterating)
+    let text_nodes: Vec<&'a AstNode<'a>> = root
+        .descendants()
+        .filter(|node| matches!(&node.data().value, NodeValue::Text(t) if t.contains('#')))
+        .collect();
 
-            hashtag_parser::parse_hashtags(text_str, |idx, hashtag_end, category| {
-                // Add text before the hashtag if any
-                if idx > last_end {
-                    events.push(Event::Text(CowStr::from(text_str[last_end..idx].to_string())));
-                }
+    for node in text_nodes {
+        let text = match node.data().value {
+            NodeValue::Text(ref t) => t.to_string(),
+            _ => continue,
+        };
 
-                // Add link for the hashtag
-                let link_text = format!("#{}", category);
-                let link_url = format!("{}.html", category);
+        let mut hashtags: Vec<(usize, usize, String)> = Vec::new();
+        hashtag_parser::parse_hashtags(&text, |start, end, tag| {
+            hashtags.push((start, end, tag.to_string()));
+        });
 
-                events.push(Event::Start(Tag::Link {
-                    link_type: LinkType::Inline,
-                    dest_url: CowStr::from(link_url),
-                    title: CowStr::from(""),
-                    id: CowStr::from(""),
-                }));
-                events.push(Event::Text(CowStr::from(link_text)));
-                events.push(Event::End(pulldown_cmark::TagEnd::Link));
+        if hashtags.is_empty() {
+            continue;
+        }
 
-                last_end = hashtag_end;
-            });
-
-            // Add any remaining text after the last hashtag
-            if last_end < text_str.len() {
-                events.push(Event::Text(CowStr::from(text_str[last_end..].to_string())));
+        let mut last_end = 0;
+        for (start, end, tag) in &hashtags {
+            if *start > last_end {
+                let before = arena.alloc(Node::from(NodeValue::Text(
+                    Cow::Owned(text[last_end..*start].to_string()),
+                )));
+                node.insert_before(before);
             }
 
-            events
+            let link_node = arena.alloc(Node::from(NodeValue::Link(Box::new(NodeLink {
+                url: format!("{}.html", tag),
+                title: String::new(),
+            }))));
+            let link_text = arena.alloc(Node::from(NodeValue::Text(
+                Cow::Owned(format!("#{}", tag)),
+            )));
+            link_node.append(link_text);
+            node.insert_before(link_node);
+
+            last_end = *end;
         }
-        // For all other events, just pass through as-is
-        other => vec![other],
+
+        if last_end < text.len() {
+            node.data_mut().value =
+                NodeValue::Text(Cow::Owned(text[last_end..].to_string()));
+        } else {
+            node.detach();
+        }
     }
 }

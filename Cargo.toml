@@ -1,6 +1,6 @@
 [package]
 name = "md-wiki"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "Markdown based static site generator for minimal wikis"
 repository = "https://github.com/sidju/md-wiki"
@@ -18,7 +18,7 @@ include = [
 ]
 
 [dependencies]
-pulldown-cmark = "0.11"
+comrak = { version = "0.51", default-features = false }
 walkdir = "2.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

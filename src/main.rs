@@ -2,17 +2,13 @@ mod analyzer;
 mod link_translator;
 mod hashtag_linker;
 mod hashtag_parser;
-mod html_aggregator;
 pub mod filesystem;
 
 use clap::Parser as ClapParser;
-use pulldown_cmark::{Options, Parser};
+use comrak::{Arena, Options, format_html, parse_document};
 use std::path::{Path, PathBuf};
 
 use analyzer::Analyzer;
-use link_translator::translate_link;
-use hashtag_linker::linkify_hashtags;
-use html_aggregator::HtmlAggregator;
 use filesystem::{FileSystem, RealFileSystem};
 
 /// A minimal static wiki generator using markdown files as input
@@ -48,6 +44,14 @@ fn main() {
             std::process::exit(1);
         }
     }
+}
+
+fn build_comrak_options() -> Options<'static> {
+    let mut options = Options::default();
+    options.extension.strikethrough = true;
+    options.extension.table = true;
+    options.extension.header_ids = Some(String::new());
+    options
 }
 
 /// Convert a directory of markdown files to HTML
@@ -114,12 +118,11 @@ fn convert_wiki<FS: FileSystem>(
 
     // FIRST PASS: Analyze all markdown files and generate HTML (but don't write yet)
     let mut generated_html: Vec<(PathBuf, String, String)> = Vec::new();
+    let options = build_comrak_options();
 
     for md_path in &markdown_files {
         let content = fs.read_to_string(md_path)?;
 
-        // Set current file in analyzer (using HTML filename)
-        // Use PathBuf's with_extension to safely change extension
         let html_filename = md_path
             .with_extension("html")
             .file_name()
@@ -128,31 +131,24 @@ fn convert_wiki<FS: FileSystem>(
             .to_string();
         analyzer.set_current_file(html_filename.clone());
 
-        // Parse markdown with options
-        let mut options = Options::empty();
-        options.insert(Options::ENABLE_STRIKETHROUGH);
-        options.insert(Options::ENABLE_TABLES);
-        options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
-        let parser = Parser::new_ext(&content, options);
+        // Parse markdown to AST
+        let arena = Arena::new();
+        let root = parse_document(&arena, &content, &options);
 
-        // Stream events through the processing pipeline:
         // 1. Translate links (.md -> .html)
-        // 2. Analyze (track backlinks, categories, and headings) - must see original hashtags
-        // 3. Linkify hashtags (expand text events into link events)
-        // 4. Aggregate to HTML
-        let html_content = {
-            let aggregator = parser
-                .map(translate_link)
-                .map(|event| analyzer.analyze(event))
-                .flat_map(linkify_hashtags)
-                .fold(HtmlAggregator::new(), |aggregator, event| {
-                    aggregator.ingest(event)
-                });
+        link_translator::translate_links(root);
 
-            aggregator.to_html_string()
-        };
+        // 2. Analyze AST: headings (for search index), backlinks, categories
+        //    Must happen before hashtag linkification so #tags are still plain text
+        analyzer.analyze_ast(root);
 
-        // Store the generated HTML and HTML filename for second pass
+        // 3. Linkify hashtags (#tag -> link nodes)
+        hashtag_linker::linkify_hashtags(&arena, root);
+
+        // 4. Render to HTML
+        let mut html_content = String::new();
+        format_html(root, &options, &mut html_content)?;
+
         generated_html.push((md_path.clone(), html_filename, html_content));
     }
 

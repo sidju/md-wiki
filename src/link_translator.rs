@@ -1,24 +1,33 @@
-use pulldown_cmark::{Event, Tag};
+use comrak::nodes::{AstNode, NodeValue};
 
-/// Translate .md links to .html links in markdown events
-pub fn translate_link<'a>(event: Event<'a>) -> Event<'a> {
-    match event {
-        Event::Start(Tag::Link { link_type, dest_url, title, id }) => {
-            // Handle .md links with or without fragments
-            let new_url = if let Some(hash_pos) = dest_url.find('#') {
-                let (path, fragment) = dest_url.split_at(hash_pos);
-                if path.ends_with(".md") {
-                    format!("{}{}", path.replace(".md", ".html"), fragment).into()
-                } else {
-                    dest_url
-                }
-            } else if dest_url.ends_with(".md") {
-                dest_url.replace(".md", ".html").into()
-            } else {
-                dest_url
-            };
-            Event::Start(Tag::Link { link_type, dest_url: new_url, title, id })
+/// Translate .md links to .html links in the AST
+pub fn translate_links<'a>(root: &'a AstNode<'a>) {
+    for node in root.descendants() {
+        let url = match node.data().value {
+            NodeValue::Link(ref link) => Some(link.url.clone()),
+            NodeValue::Image(ref link) => Some(link.url.clone()),
+            _ => None,
+        };
+
+        if let Some(url) = url {
+            let new_url = translate_url(&url);
+            match node.data_mut().value {
+                NodeValue::Link(ref mut link) => link.url = new_url,
+                NodeValue::Image(ref mut link) => link.url = new_url,
+                _ => {}
+            }
         }
-        _ => event,
     }
+}
+
+fn translate_url(url: &str) -> String {
+    if let Some(hash_pos) = url.find('#') {
+        let (path, fragment) = url.split_at(hash_pos);
+        if path.ends_with(".md") {
+            return format!("{}{}", &path[..path.len() - 3], ".html") + fragment;
+        }
+    } else if url.ends_with(".md") {
+        return format!("{}.html", &url[..url.len() - 3]);
+    }
+    url.to_string()
 }

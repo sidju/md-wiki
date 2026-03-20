@@ -14,5 +14,5 @@ fn test_convert_simple_markdown() {
 
     fixture.assert_output_exists("test.html");
     // Check ordering of header, content, and footer in one assertion
-    fixture.assert_output_contains("test.html", "<html><body><h1 id=\"hello-world\">Hello World</h1>\n<p>This is a test.</p>\n</body></html>");
+    fixture.assert_output_contains("test.html", "<html><body><h1><a href=\"#hello-world\" aria-hidden=\"true\" class=\"anchor\" id=\"hello-world\"></a>Hello World</h1>\n<p>This is a test.</p>\n</body></html>");
 }
